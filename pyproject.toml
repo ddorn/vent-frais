@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "vent-frais"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+xarray = {version = "^2022.6.0"}
+matplotlib = "^3.5.2"
+cfgrib = "^0.9.10"
+PyQt5 = "^5.15.7"
+
+[tool.poetry.dev-dependencies]
+yapf = "^0.32.0"
+ptpython = "^3.0.20"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
