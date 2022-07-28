@@ -20,6 +20,8 @@ QUESTION_PATH = DATA / 'questions.csv'
 DECK_PATH = DATA / 'deck.json'
 WIND_PATH = DATA / 'wind.npy'
 
+COLORS = [None, [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
+
 def thue_gen():
     n = 0
     while True:
@@ -45,6 +47,13 @@ def iterate_in_squares(bound=-1):
                 yield d, r
                 yield d, -r
         r += 1
+
+def print_square(color: int, txt='', fg=False):
+    r, g, b = COLORS[int(color)]
+    txt = (str(txt) + '  ')[:2]
+    code = 38 if fg else 48
+    print(f'\033[{code};2;{r};{g};{b}m{txt}\033[0m', end='')
+
 
 def get_board(radius: int):
     """
@@ -84,7 +93,7 @@ class Category(enum.Enum):
     ABOUT_THE_WORLD = 3
     REGARD_SUR_LE_MONDS = 4
 
-@dataclass
+@dataclass(frozen=True)
 class Question:
     statement: str
     position: tuple[int, int]
@@ -118,7 +127,7 @@ class Question:
         category = Category[d['category']]
         return cls(
             d['statement'],
-            d['position'],
+            tuple(d['position']),
             category,
         )
 
@@ -145,14 +154,46 @@ class Deck:
 
     def new_card(self, category: Category, prompt: str) -> None:
         used_positions = {q.position for q in self.cards}
-        radius = max((max(p) for p in used_positions), default=0)
+        radius = self.radius
         board = get_board(radius + 2)
 
         for pos in iterate_in_squares(radius + 2):
-            if pos not in used_positions and board[pos] == category.value:
+            x = pos[0] + radius + 2
+            y = pos[1] + radius + 2
+            if pos not in used_positions and board[x, y] == category.value:
                 # We found the new position
                 self.cards.append(Question(prompt, pos, category))
                 break
+
+    @property
+    def radius(self) -> int:
+        if not self.cards:
+            return 0
+        return max((max(map(abs, p)) for p in (q.position for q in self.cards)), default=0)
+
+    def show(self):
+        by_pos = {
+            tuple(q.position): q
+            for q in self.cards
+        }
+
+        ids = []
+        radius = self.radius + 1
+        board = get_board(radius)
+        for u in range(2 * radius + 1):
+            for v in range(2 * radius + 1):
+                q = by_pos.get((u - radius, v - radius), None)
+                if q is None:
+                    print_square(board[u, v], '. ', True)
+                else:
+                    print_square(q.category.value, len(ids))
+                    ids.append(q)
+            print()
+        print()
+
+        for i, q in enumerate(ids):
+            print_square(q.category.value, i)
+            print(':', q.statement)
 
 
 class WindMap:
@@ -322,6 +363,15 @@ def new_deck(wind, scale, output):
     deck = Deck([], WindMap(np.load(wind), scale=scale))
     output.write(deck.to_json())
 
+@cli.command('show')
+@click.argument('deck', type=click.Path(path_type=Path), default=DECK_PATH)
+def show_deck(deck: Path):
+    """
+    Show a deck.
+    """
+    deck = Deck.load(deck)
+    deck.show()
+
 @cli.command(name='plot')
 @click.argument('wind_file', type=click.Path(), default=WIND_PATH)
 def plot(wind_file: str):
@@ -347,12 +397,6 @@ def plot(wind_file: str):
 @click.argument('radius', type=int, default = 10)
 def squares(radius):
     board = get_board(radius)
-
-    def print_square(color: int, txt=''):
-        colors = [None, [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
-        r, g, b = colors[int(color)]
-        txt = (txt + '  ')[:2]
-        print(f'\033[48;2;{r};{g};{b}m{txt}', end='')
 
     for y, row in enumerate(board):
         for x, tile in enumerate(row):
