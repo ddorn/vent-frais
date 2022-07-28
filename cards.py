@@ -1,6 +1,12 @@
 #!/bin/env python3
 
+from __future__ import annotations
+
 import csv
+import enum
+import json
+from re import L
+from typing import Callable
 import click
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,8 +15,10 @@ from pprint import pprint
 import numpy as np
 import matplotlib.pyplot as plt
 
-QUESTION_PATH = Path(__file__).parent / 'data' / 'questions.csv'
-
+DATA = Path(__file__).parent / 'data'
+QUESTION_PATH = DATA / 'questions.csv'
+DECK_PATH = DATA / 'deck.json'
+WIND_PATH = DATA / 'wind.npy'
 
 def thue_gen():
     n = 0
@@ -70,81 +78,86 @@ def get_board(radius: int):
     return board
 
 
-# ------------------------ #
-#  Command line interface  #
-# ------------------------ #
+class Category(enum.Enum):
+    PERSO_EASY = 1
+    PERSO_HARD = 2
+    ABOUT_THE_WORLD = 3
+    REGARD_SUR_LE_MONDS = 4
 
-@click.group()
-def cli():
-    pass
+@dataclass
+class Question:
+    statement: str
+    position: tuple[int, int]
+    category: Category
 
-@cli.command(name='convert')
-@click.argument('file', type=click.Path())
-@click.argument('out', type=click.Path(), default='data/wind.npy')
-def convert_gfs_data(file: str, out: str):
-    """
-    Convert GFS forcasts into numpy arrays with wind velocities.
+    def gen_svg(self, wind: WindMap):
+        Field2D = Callable[[float, float], float]
+        def _gen_svg(prompt: str, category: Category, angles: Field2D, intensities: Field2D):
+            a = [
+                [angles(x / 100, y / 100) for x in range(100)]
+                for y in range(100)
+            ]
+            plt.imshow(a, cmap='hsv')
 
-    Forcasts can be found here:
-    https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl
-    One needs to select:
-     - the file ending in f000,
-     - The desired level (eg. 10 m above ground)
-     - The variables UGRD and VGRD
-    """
+        return _gen_svg(
+            self.statement,
+            self.category,
+            lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] + y),
+            lambda x, y: wind.speed_at(self.position[0] + x, self.position[1] + y),
+        )
 
-    import xarray as xr
+    def to_dict(self):
+        return {
+            'statement': self.statement,
+            'position': self.position,
+            'category': self.category.name,
+        }
 
-    ds = xr.load_dataset(file, engine='cfgrib')
-    u = ds.u10.data
-    v = ds.v10.data
-    velocities = np.stack((u, v), axis=-1)
-    np.save(out, velocities)
-
-    return velocities
-
-
-@cli.command(name='plot')
-@click.argument('wind_file', type=click.Path(), default='data/wind.npy')
-def plot(wind_file: str):
-    wind = np.load(wind_file)
-    x = wind[..., 0]
-    y = wind[..., 1]
-    angle = np.arctan2(y, x)
-    speed = x ** 2 + y ** 2
-    # plt.streamplot(
-    #     np.linspace(-90, 90, x.shape[1]),
-    #     np.linspace(0, 360, x.shape[0]),
-    #     x, y,
-    #     density=10,
-    # )
-    plt.subplot(2, 1, 1)
-    plt.imshow(angle, cmap='hsv')
-    plt.subplot(2, 1, 2)
-    plt.imshow(speed)
-    plt.show()
+    @classmethod
+    def from_dict(cls, d: dict):
+        category = Category[d['category']]
+        return cls(
+            d['statement'],
+            d['position'],
+            category,
+        )
 
 
-@cli.command()
-@click.argument('radius', type=int, default = 10)
-def squares(radius):
-    board = get_board(radius)
+@dataclass
+class Deck:
+    cards: list[Question]
+    wind: WindMap
 
-    def print_square(color: int, txt=''):
-        colors = [None, [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
-        r, g, b = colors[int(color)]
-        txt = (txt + '  ')[:2]
-        print(f'\033[48;2;{r};{g};{b}m{txt}', end='')
+    @classmethod
+    def load(cls, path: Path = DECK_PATH) -> Deck:
+        d = json.loads(path.read_text())
+        return cls(
+            [Question.from_dict(q) for q in d['cards']],
+            WindMap.from_dict(d['wind']),
+        )
 
-    for y, row in enumerate(board):
-        for x, tile in enumerate(row):
-            print_square(tile, '**' if x == y == radius else '')
-        print('\033[0m')
+    def to_json(self) -> str:
+        s = json.dumps({
+            'cards': [q.to_dict() for q in self.cards],
+            'wind': self.wind.to_dict(),
+        })
+        return s
 
+    def new_card(self, category: Category, prompt: str) -> None:
+        used_positions = {q.position for q in self.cards}
+        radius = max((max(p) for p in used_positions), default=0)
+        board = get_board(radius + 2)
+
+        for pos in iterate_in_squares(radius + 2):
+            if pos not in used_positions and board[pos] == category.value:
+                # We found the new position
+                self.cards.append(Question(prompt, pos, category))
+                break
 
 
 class WindMap:
-    def __init__(self, wind: np.ndarray) -> None:
+    def __init__(self, wind: np.ndarray, scale: float = 1.0) -> None:
+        self.scale = scale
         self.wind = wind
         self.u = wind[..., 0]
         self.v = wind[..., 1]
@@ -210,22 +223,29 @@ class WindMap:
         lat = np.arcsin(np.sin(p)/M)
         return long, lat
 
-    def angle_at(self, x, y, scale = 1.0):
-        lat, lon = self.gps_from_equal_earth(x * scale, y * scale)
+    def angle_at(self, x, y):
+        lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
         x, y = self.gps_to_index(lat, lon)
         return self.bilinear_interpolation(self.angle, x, y)
 
-    def speed_at(self, x, y, scale = 1.0):
-        lat, lon = self.gps_from_equal_earth(x * scale, y * scale)
+    def speed_at(self, x, y):
+        lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
         x, y = self.gps_to_index(lat, lon)
         return self.bilinear_interpolation(self.speed, x, y)
 
+    def to_dict(self):
+        return {
+            'wind': self.wind.tolist(),
+            'scale': self.scale,
+        }
 
+    @classmethod
+    def from_dict(cls, d: dict):
+        return cls(
+            np.array(d['wind']),
+            d['scale'],
+        )
 
-@dataclass
-class Question:
-    statement: str
-    tags: list[str]
 
 def load_questions() -> list[Question]:
     questions = csv.reader(QUESTION_PATH.open('r'))
@@ -237,6 +257,107 @@ def load_questions() -> list[Question]:
         for row in questions
     ]
 
+
+# ------------------------ #
+#  Command line interface  #
+# ------------------------ #
+
+@click.group()
+def cli():
+    pass
+
+@cli.command(name='convert')
+@click.argument('file', type=click.Path())
+@click.argument('out', type=click.Path(), default=WIND_PATH)
+def convert_gfs_data(file: str, out: str):
+    """
+    Convert GFS forcasts into numpy arrays with wind velocities.
+
+    Forcasts can be found here:
+    https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl
+    One needs to select:
+     - the file ending in f000,
+     - The desired level (eg. 10 m above ground)
+     - The variables UGRD and VGRD
+    """
+
+    import xarray as xr
+
+    ds = xr.load_dataset(file, engine='cfgrib')
+    u = ds.u10.data
+    v = ds.v10.data
+    velocities = np.stack((u, v), axis=-1)
+    np.save(out, velocities)
+
+    return velocities
+
+
+@cli.command('add')
+@click.argument('category', type=click.Choice(Category.__members__))
+@click.argument('prompt', type=click.STRING)
+@click.option('-d', '--deck-path', type=click.Path(path_type=Path), default=DECK_PATH)
+def new_card(category, prompt, deck_path):
+    """
+    Create a new card and add it to the deck.
+    """
+    if not deck_path.exists():
+        click.echo('The Deck does not exist, create it first with `cards.py new`.')
+        exit(1)
+    else:
+        deck = Deck.load(deck_path)
+
+    deck.new_card(Category[category], prompt)
+    deck_path.parent.mkdir(parents=True, exist_ok=True)
+    deck_path.write_text(deck.to_json())
+
+@cli.command('new')
+@click.argument('wind', type=click.Path(path_type=Path), default=WIND_PATH)
+@click.option('-s', '--scale', type=click.FLOAT, default=1)
+@click.option('-o', '--output', type=click.File('w'), default='-')
+def new_deck(wind, scale, output):
+    """
+    Create a new deck.
+    """
+
+    deck = Deck([], WindMap(np.load(wind), scale=scale))
+    output.write(deck.to_json())
+
+@cli.command(name='plot')
+@click.argument('wind_file', type=click.Path(), default=WIND_PATH)
+def plot(wind_file: str):
+    wind = np.load(wind_file)
+    x = wind[..., 0]
+    y = wind[..., 1]
+    angle = np.arctan2(y, x)
+    speed = x ** 2 + y ** 2
+    # plt.streamplot(
+    #     np.linspace(-90, 90, x.shape[1]),
+    #     np.linspace(0, 360, x.shape[0]),
+    #     x, y,
+    #     density=10,
+    # )
+    plt.subplot(2, 1, 1)
+    plt.imshow(angle, cmap='hsv')
+    plt.subplot(2, 1, 2)
+    plt.imshow(speed)
+    plt.show()
+
+
+@cli.command()
+@click.argument('radius', type=int, default = 10)
+def squares(radius):
+    board = get_board(radius)
+
+    def print_square(color: int, txt=''):
+        colors = [None, [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
+        r, g, b = colors[int(color)]
+        txt = (txt + '  ')[:2]
+        print(f'\033[48;2;{r};{g};{b}m{txt}', end='')
+
+    for y, row in enumerate(board):
+        for x, tile in enumerate(row):
+            print_square(tile, '**' if x == y == radius else '')
+        print('\033[0m')
 
 
 if __name__ == '__main__':
