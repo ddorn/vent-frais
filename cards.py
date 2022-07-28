@@ -11,11 +11,68 @@ import matplotlib.pyplot as plt
 
 QUESTION_PATH = Path(__file__).parent / 'data' / 'questions.csv'
 
-@dataclass
-class Question:
-    statement: str
-    tags: list[str]
 
+def thue_gen():
+    n = 0
+    while True:
+        n += 1
+        yield n.bit_count() % 2
+
+def thue_morse_random(bound):
+    t = thue_gen()
+
+    yield
+    while True:
+        n = sum(2 ** i * next(t) for i in range(bound.bit_count() * 2)) % bound
+        bound = yield n
+
+def iterate_in_squares(bound=-1):
+    """Yield all the points in Z², ordered by distance to the origin (in |·|_{sup})"""
+    r = 0
+    while r != bound:
+        for d in range(-r, r+1):
+            yield r, d
+            yield -r, d
+            if abs(d) != r:
+                yield d, r
+                yield d, -r
+        r += 1
+
+def get_board(radius: int):
+    """
+    Return a (2r+1)×(2r+1) board of the types of the tiles.
+    The center is in (r, r).
+    Larger boards are identical with smaller boards on their intersection.
+    """
+
+    # Deterministic random generator
+    t = thue_morse_random(4)
+    next(t)
+
+    board = -np.ones((2 * radius + 1, 2 * radius +1))
+    for dx, dy in iterate_in_squares(radius + 1):
+        x = radius + dx
+        y = radius + dy
+
+        # N/S/E/W neighbours if they exist
+        taken = {
+            board[x-1, y] if x - 1 >= 0 else None,
+            board[x+1, y] if x + 1 < board.shape[0] else None,
+            board[x, y-1] if y - 1 >= 0 else None,
+            board[x, y+1] if y + 1 < board.shape[1] else None,
+        }
+        options = {1, 2, 3, 4} - set(taken)
+        options = sorted(list(options))
+        # tile = random.choice(list(options))
+        tile = options[t.send(len(options))]
+        board[x, y] = tile
+
+    return board
+
+
+# ------------------------ #
+#  Command line interface  #
+# ------------------------ #
 
 @click.group()
 def cli():
@@ -66,6 +123,24 @@ def plot(wind_file: str):
     plt.subplot(2, 1, 2)
     plt.imshow(speed)
     plt.show()
+
+
+@cli.command()
+@click.argument('radius', type=int, default = 10)
+def squares(radius):
+    board = get_board(radius)
+
+    def print_square(color: int, txt=''):
+        colors = [None, [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
+        r, g, b = colors[int(color)]
+        txt = (txt + '  ')[:2]
+        print(f'\033[48;2;{r};{g};{b}m{txt}', end='')
+
+    for y, row in enumerate(board):
+        for x, tile in enumerate(row):
+            print_square(tile, '**' if x == y == radius else '')
+        print('\033[0m')
+
 
 
 class WindMap:
@@ -135,16 +210,22 @@ class WindMap:
         lat = np.arcsin(np.sin(p)/M)
         return long, lat
 
-    def angle_at(self, x, y, scale = 1):
-        lat, lon = self.gps_from_equal_earth(x, y)
+    def angle_at(self, x, y, scale = 1.0):
+        lat, lon = self.gps_from_equal_earth(x * scale, y * scale)
         x, y = self.gps_to_index(lat, lon)
-        return self.bilinear_interpolation(self.angle, x * scale, y * scale)
+        return self.bilinear_interpolation(self.angle, x, y)
 
-    def speed_at(self, x, y, scale = 1):
-        lat, lon = self.gps_from_equal_earth(x, y)
+    def speed_at(self, x, y, scale = 1.0):
+        lat, lon = self.gps_from_equal_earth(x * scale, y * scale)
         x, y = self.gps_to_index(lat, lon)
-        return self.bilinear_interpolation(self.speed, x * scale, y * scale)
+        return self.bilinear_interpolation(self.speed, x, y)
 
+
+
+@dataclass
+class Question:
+    statement: str
+    tags: list[str]
 
 def load_questions() -> list[Question]:
     questions = csv.reader(QUESTION_PATH.open('r'))
@@ -156,7 +237,6 @@ def load_questions() -> list[Question]:
         for row in questions
     ]
 
-# pprint(load_questions())
 
 
 if __name__ == '__main__':
