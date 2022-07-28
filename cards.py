@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import enum
 import json
+from platform import python_branch
+from pydoc import describe
 from re import L
 from typing import Callable
 import click
@@ -12,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from pprint import pprint
 
+import pygame
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -91,7 +94,7 @@ class Category(enum.Enum):
     PERSO_EASY = 1
     PERSO_HARD = 2
     ABOUT_THE_WORLD = 3
-    REGARD_SUR_LE_MONDS = 4
+    REGARD_SUR_LE_MONDE = 4
 
 @dataclass(frozen=True)
 class Question:
@@ -398,6 +401,75 @@ def squares(radius):
             print_square(tile, '**' if x == y == radius else '')
         print('\033[0m')
 
+
+_TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
+_FONT_FILE = 'font/ArbutusSlab-Regular.ttf'
+def get_text_metrics(text: str = _TEXT, font_size=30, top_margin=100, margin=30, line_spacing=0, canvas_size=500, font_file=_FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
+    pygame.init()
+    font = pygame.font.Font('font/ArbutusSlab-Regular.ttf', font_size)
+
+    def wrapped_text(txt: str, max_width):
+        words = txt.split(' ')
+        lines = []
+        while words:
+            line = []
+            while font.size(" ".join(line))[0] < max_width:
+                if not words:
+                    break
+                line.append(words.pop(0))
+            else:
+                words.insert(0, line.pop())
+            lines.append(' '.join(line))
+        return lines
+
+    def center_text(midtop: tuple[int, int], *lines: str):
+        rects = []
+        y = midtop[1]
+        for line in lines:
+            r = pygame.Rect(0, 0, *font.size(line))
+            r.midtop = midtop[0], y
+            rects.append(r)
+            y += r.height + line_spacing
+
+        return rects
+
+    lines = wrapped_text(text, canvas_size - margin * 2)
+    rects = center_text((canvas_size // 2, top_margin), *lines)
+
+    descent = font.get_descent()
+    return [
+        (line, (rect.left, rect.bottom - descent), rect)
+        for line, rect in zip(lines, rects)
+    ]
+
+@cli.command()
+@click.argument('text', type=click.STRING, default=_TEXT)
+def text_test(text):
+    W = 500
+    FONT_SIZE = 30
+    TEXT_COLOR = (255, 255, 255)
+
+
+    screen = pygame.display.set_mode((W, W))
+    screen.fill((0, 0, 0))
+    metrics = get_text_metrics(text)
+    font = pygame.font.Font(_FONT_FILE, FONT_SIZE)
+
+    for line, _, rect in metrics:
+        t = font.render(line, True, TEXT_COLOR)
+        screen.blit(t, rect)
+        pygame.draw.rect(screen, (0, 255, 0), rect, 1)
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            # quit on escape
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return
+
+        pygame.time.wait(100)
+        pygame.display.flip()
 
 if __name__ == '__main__':
     cli()

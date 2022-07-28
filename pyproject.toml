@@ -10,6 +10,7 @@ xarray = {version = "^2022.6.0"}
 matplotlib = "^3.5.2"
 cfgrib = "^0.9.10"
 PyQt5 = "^5.15.7"
+pygame = "^2.1.2"
 
 [tool.poetry.dev-dependencies]
 yapf = "^0.32.0"
