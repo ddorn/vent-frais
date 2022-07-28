@@ -305,11 +305,12 @@ def load_questions() -> list[Question]:
 
 @click.group()
 def cli():
+    """Utility to manage decks of Vent Frais."""
     pass
 
 @cli.command(name='convert')
-@click.argument('file', type=click.Path())
-@click.argument('out', type=click.Path(), default=WIND_PATH)
+@click.argument('file', type=click.Path(exists=True))
+@click.argument('out', type=click.Path(writable=True, dir_okay=False), default=WIND_PATH)
 def convert_gfs_data(file: str, out: str):
     """
     Convert GFS forcasts into numpy arrays with wind velocities.
@@ -336,23 +337,17 @@ def convert_gfs_data(file: str, out: str):
 @cli.command('add')
 @click.argument('category', type=click.Choice(Category.__members__))
 @click.argument('prompt', type=click.STRING)
-@click.option('-d', '--deck-path', type=click.Path(path_type=Path), default=DECK_PATH)
+@click.option('-d', '--deck-path', type=click.Path(exists=True, path_type=Path), default=DECK_PATH)
 def new_card(category, prompt, deck_path):
-    """
-    Create a new card and add it to the deck.
-    """
-    if not deck_path.exists():
-        click.echo('The Deck does not exist, create it first with `cards.py new`.')
-        exit(1)
-    else:
-        deck = Deck.load(deck_path)
+    """Create a new card and add it to the deck."""
 
+    deck = Deck.load(deck_path)
     deck.new_card(Category[category], prompt)
     deck_path.parent.mkdir(parents=True, exist_ok=True)
     deck_path.write_text(deck.to_json())
 
 @cli.command('new')
-@click.argument('wind', type=click.Path(path_type=Path), default=WIND_PATH)
+@click.argument('wind', type=click.Path(exists=True, path_type=Path), default=WIND_PATH)
 @click.option('-s', '--scale', type=click.FLOAT, default=1)
 @click.option('-o', '--output', type=click.File('w'), default='-')
 def new_deck(wind, scale, output):
@@ -364,7 +359,7 @@ def new_deck(wind, scale, output):
     output.write(deck.to_json())
 
 @cli.command('show')
-@click.argument('deck', type=click.Path(path_type=Path), default=DECK_PATH)
+@click.argument('deck', type=click.Path(exists=True, path_type=Path))
 def show_deck(deck: Path):
     """
     Show a deck.
@@ -373,7 +368,7 @@ def show_deck(deck: Path):
     deck.show()
 
 @cli.command(name='plot')
-@click.argument('wind_file', type=click.Path(), default=WIND_PATH)
+@click.argument('wind_file', type=click.Path(exists=True), default=WIND_PATH)
 def plot(wind_file: str):
     wind = np.load(wind_file)
     x = wind[..., 0]
