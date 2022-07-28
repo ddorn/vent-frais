@@ -406,7 +406,7 @@ _TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fa
 _FONT_FILE = 'font/ArbutusSlab-Regular.ttf'
 def get_text_metrics(text: str = _TEXT, font_size=30, top_margin=100, margin=30, line_spacing=0, canvas_size=500, font_file=_FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
     pygame.init()
-    font = pygame.font.Font('font/ArbutusSlab-Regular.ttf', font_size)
+    font = pygame.font.Font(font_file, font_size)
 
     def wrapped_text(txt: str, max_width):
         words = txt.split(' ')
