@@ -168,19 +168,38 @@ class ProtectedZones:
     RECT_INFLATION = 30 #TODO add smooth empty space
     
 
+    def compute_red_factor(self,d):
+        if d < 0:
+            return 0
+        elif d< 2* self.logo_radius * 0.8:
+            red_factor = d/(2*self.logo_radius*0.8)
+            if  red_factor > 0.3:
+                return red_factor*0.8 + 0.2
+            else:
+                return 0.
+        else:
+            return 1.
+
     def collide(self, shape_dict, shape_type) -> bool:
         if shape_type == "circle":
             p = np.array([shape_dict["cx"], shape_dict["cy"]])
             r = shape_dict["r"]
 
             if self.is_face:
-                for rect in self.line_rects:
-                    inflation = self.RECT_INFLATION + r * 500
-                    if rect.inflate(inflation,
-                                    inflation).collidepoint(self.to_pygame(p)):
-                        return True
-                return False
-                
+                if self.smooth_by_size:
+                    red_size = 1.
+                    for rect in self.line_rects:
+                        d = dist_to_rect(self.to_pygame(p), rect) + TEXT_GRADIENT_DEADZONE
+                        
+                        red_size = min(red_size, self.compute_red_factor(d/500))
+                    return red_size
+                else:
+                    for rect in self.line_rects:
+                        inflation = self.RECT_INFLATION + r * 500
+                        if rect.inflate(inflation,
+                                        inflation).collidepoint(self.to_pygame(p)):
+                            return True
+                    return False
             else:
                 if self.smooth:
                     d = np.linalg.norm(self.logo_xy - p)
@@ -196,18 +215,9 @@ class ProtectedZones:
                         return False
 
                 elif self.smooth_by_size:
-                    d = np.linalg.norm(self.logo_xy - p)
-                    if  d <= (self.logo_radius + r):
-                        return 0.
-                    elif d<= (self.logo_radius*3 + r):
-                        red_factor = (d-self.logo_radius -\
-                                                 r)/(2*self.logo_radius)
-                        if red_factor >0.3:
-                            return red_factor*0.8 + 0.2
-                        else:
-                            return 0.
-                    else:
-                        return 1.
+                    d = np.linalg.norm(self.logo_xy - p)-r-self.logo_radius
+                    return self.compute_red_factor(d)
+
 
                 else:
                     return np.linalg.norm(self.logo_xy - p) <= (self.logo_radius +
@@ -217,16 +227,28 @@ class ProtectedZones:
             p1 = np.array([shape_dict["x1"], shape_dict["y1"]])
             p2 = np.array([shape_dict["x2"], shape_dict["y2"]])
             if self.is_face:
-                inflation = self.RECT_INFLATION + self.line_width
-                for rect in self.line_rects:
-                    if rect.inflate(inflation, inflation).clipline(
-                            self.to_pygame(p1), self.to_pygame(p2)):
-                        return True
-                return False
+
+                if self.smooth_by_size:
+                    red_size = 1.
+                    inflation = self.RECT_INFLATION + self.line_width
+                    mid_point = (self.to_pygame(p1) + self.to_pygame(p2))/2
+                    
+                    for rect in self.line_rects:
+                        d = dist_to_rect(mid_point, rect) + TEXT_GRADIENT_DEADZONE
+                        red_size = min(red_size, self.compute_red_factor(d/500))
+
+                    return red_size
+                else:
+                    inflation = self.RECT_INFLATION + self.line_width
+                    for rect in self.line_rects:
+                        if rect.inflate(inflation, inflation).clipline(
+                                self.to_pygame(p1), self.to_pygame(p2)):
+                            return True
+                    return False
             else:
                 if self.smooth:
                     d = (np.linalg.norm(self.logo_xy - p1) + \
-                        np.linalg.norm(self.logo_xy - p2))*0.5
+                        np.linalg.norm(self.logo_xy - p2))*0.5 
                     if d < self.logo_radius:
                         return True
                     elif d< 2* self.logo_radius:
@@ -238,23 +260,15 @@ class ProtectedZones:
                         return False
                 elif self.smooth_by_size:
                     d = (np.linalg.norm(self.logo_xy - p1) + \
-                        np.linalg.norm(self.logo_xy - p2))*0.5
-                    if d < self.logo_radius:
-                        return 0
-                    elif d< 3* self.logo_radius:
-                        red_factor = (d-self.logo_radius)/(2*self.logo_radius)
-                        if  red_factor > 0.3:
-                            return red_factor*0.8 + 0.2
-                        else:
-                            return 0.
-                    else:
-                        return 1.
+                        np.linalg.norm(self.logo_xy - p2))*0.5 - self.logo_radius
+                    return self.compute_red_factor(d)
+
                 else:
                     return np.linalg.norm(self.logo_xy - p1) < self.logo_radius or \
                     np.linalg.norm(self.logo_xy - p2) < self.logo_radius
 
     def to_pygame(self, point):
-        return (point[0] * 500, 500 - point[1] * 500)
+        return np.array([point[0] * 500, 500 - point[1] * 500])
 
 
 Field2D = Callable[[float, float], float]

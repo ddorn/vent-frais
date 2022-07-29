@@ -9,7 +9,7 @@ WIND_PATH = DATA / 'wind.npy'
 FONT_FILE = 'font/ArbutusSlab-Regular.ttf'
 FONT_SIZE = 30
 TOP_MARGIN = 100
-MARGIN = 30
+MARGIN = 50
 LINE_SPACING = 0
 CANVAS_SIZE = 500
 WIND_BLUR = 2
@@ -23,6 +23,8 @@ SHRINK_FACTOR = 0.85
 LOGO_RADIUS = 0.1 #0.128
 LOGO_H = 353*0.3
 LOGO_W = 273*0.3
+
+TEXT_GRADIENT_DEADZONE = 15
 
 class Category(enum.Enum):
     PERSO_EASY = 1
