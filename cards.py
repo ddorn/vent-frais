@@ -21,10 +21,10 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.ndimage.filters import gaussian_filter
+from scipy.ndimage import gaussian_filter
 
 from constants import *
-from card_draw import draw_card
+from card_draw import draw_card, generate_all_shapes
 
 COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100],
           [40, 67, 120]]
@@ -103,11 +103,7 @@ class Question:
     position: tuple[int, int]
     category: Category
 
-    def gen_svg(self, wind: WindMap, is_face: bool = False):
-        Field2D = Callable[[float, float], float]
-
-        angle = lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] + y)
-        speed = lambda x, y: 20 + wind.speed_at(self.position[0] + x, self.position[1] + y)
+    def gen_svg(self, shapes, is_face: bool = False):
 
         def heatmap(f):
             v = [[f(x / 100, y / 100) for x in range(100)] for y in range(100)]
@@ -119,7 +115,7 @@ class Question:
         # plt.show()
 
         metrics = get_text_metrics(self.statement)
-        return draw_card(self.category, metrics, is_face, angle, speed)
+        return draw_card(self.category, shapes, self.position, metrics, is_face)
 
     def to_dict(self):
         return {
@@ -141,20 +137,20 @@ class Question:
 @dataclass
 class Deck:
     cards: list[Question]
-    wind: WindMap
+    shapes: list[dict[str, float]]
 
     @classmethod
     def load(cls, path: Path = DECK_PATH) -> Deck:
         d = json.loads(path.read_text())
         return cls(
             [Question.from_dict(q) for q in d['cards']],
-            WindMap.from_dict(d['wind']),
+            d.get('shapes', {}),
         )
 
     def to_json(self) -> str:
         s = json.dumps({
             'cards': [q.to_dict() for q in self.cards],
-            'wind': self.wind.to_dict(),
+            'shape_file': self.shapes,
         })
         return s
 
@@ -213,13 +209,9 @@ class WindMap:
 
     def __init__(self, wind: np.ndarray, scale: float = 1.0) -> None:
         self.scale = scale
-        self.wind = wind
-        u = wind[..., 0]
-        v = wind[..., 1]
-        u = gaussian_filter(u, 3)
-        v = gaussian_filter(v, 3)
-        self.angle = np.arctan2(v, u)
-        self.speed = u**2 + v**2
+        u = gaussian_filter(wind[..., 0], WIND_BLUR)
+        v = gaussian_filter(wind[..., 1], WIND_BLUR)
+        self.wind = np.stack((u, v), axis=-1)
 
     def gps_to_index(self, lat: float, lon: float) -> tuple[float, float]:
         """
@@ -281,30 +273,27 @@ class WindMap:
         lat = np.arcsin(np.sin(p) / M)
         return long, lat
 
-    def angle_at(self, x, y):
+
+    def wind_at(self, x, y) -> tuple[float, float]:
         # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
         lat, lon = x * self.scale, y * self.scale
         x, y = self.gps_to_index(lat, lon)
-        return self.bilinear_interpolation(self.angle, x, y)
+
+        try:
+            u = self.bilinear_interpolation(self.wind[..., 0], x, y)
+            v = self.bilinear_interpolation(self.wind[..., 1], x, y)
+        except IndexError:
+            return 0, 0
+
+        return u, v
+
+    def angle_at(self, x, y):
+        u, v = self.wind_at(x, y)
+        return np.arctan2(v, u)
 
     def speed_at(self, x, y):
-        # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
-        lat, lon = x * self.scale, y * self.scale
-        x, y = self.gps_to_index(lat, lon)
-        return self.bilinear_interpolation(self.speed, x, y)
-
-    def to_dict(self):
-        return {
-            'wind': self.wind.tolist(),
-            'scale': self.scale,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict):
-        return cls(
-            np.array(d['wind']),
-            d['scale'],
-        )
+        u, v = self.wind_at(x, y)
+        return u ** 2 + v ** 2
 
 
 _TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
@@ -404,6 +393,21 @@ def convert_gfs_data(file: str, out: str):
 
     return velocities
 
+@cli.command(name='shapes')
+@click.argument('file', type=click.Path(exists=True))
+@click.argument('out', type=click.File('w'))
+@click.option('-s', '--scale', type=float, default=20.0)
+@click.option('-d', '--min-density', type=float, default=20.0)
+@click.option('-S', '--size', type=int, default=4)
+def generate_shapes(file, out, scale, min_density, size):
+    """Convert a wind .npy file into a shapefile."""
+
+    wind = WindMap(np.load(file), scale)
+    shapes = generate_all_shapes(wind.angle_at, lambda x, y: min_density + wind.speed_at(x, y), size)
+
+    out.write(json.dumps(shapes))
+
+
 
 @cli.command('add')
 @click.argument('category', type=click.Choice(list(Category.__members__)))
@@ -448,12 +452,12 @@ def show_deck(deck: Path):
 
 @cli.command('edit')
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
-@click.option('-s', '--scale', type=int)
-def edit_deck(deck: Path, scale = None):
+@click.option('-s', '--shapefile', type=click.File())
+def edit_deck(deck: Path, shapefile = None):
     """Edit a deck."""
     the_deck = Deck.load(deck)
-    if scale is not None:
-        the_deck.wind.scale = scale
+    if shapefile is not None:
+        the_deck.shapes = json.load(shapefile)
     deck.write_text(the_deck.to_json())
 
 @cli.command('gen')
@@ -472,7 +476,7 @@ def edit_deck(deck: Path, scale = None):
 def gen_svg(deck, x, y, show, back, output):
     deck = Deck.load(deck)
     card = deck.at(x, y)
-    svg = card.gen_svg(deck.wind, not back)
+    svg = card.gen_svg(deck.shapes, not back)
     output.write(svg)
     if show:
         if output.name == '<stdout>':
@@ -484,9 +488,14 @@ def gen_svg(deck, x, y, show, back, output):
         os.system('firefox ' + p)
 
 
-@cli.command(name='plot')
+@cli.group('plot')
+def plot():
+    """Display various data."""
+    pass
+
+@plot.command('wind')
 @click.argument('wind_file', type=click.Path(exists=True), default=WIND_PATH)
-def plot(wind_file: str):
+def plot_wind(wind_file: str):
     wind = np.load(wind_file)
     x = wind[..., 0]
     y = wind[..., 1]
@@ -504,10 +513,99 @@ def plot(wind_file: str):
     plt.imshow(speed)
     plt.show()
 
+@plot.command('shapefile')
+@click.argument('shapefile', type=click.File())
+def plot_shapefile(shapefile):
+    shapes = json.load(shapefile)
 
-@cli.command()
+    minx = float('inf')
+    miny = minx
+    maxx = -minx
+    maxy = maxx
+    for shape in shapes:
+        # print(shape)
+        if 'r' in shape:
+            attrs = [('cx', 'cy')]
+        else:
+            attrs = ('x1', 'y1'), ('x2', 'y2')
+
+        for ax, ay in attrs:
+            minx = min(minx, shape[ax])
+            maxx = max(maxx, shape[ax])
+            miny = min(miny, shape[ay])
+            maxy = max(maxy, shape[ay])
+
+    print(f"{minx=} {maxx=} {miny=} {maxy=}")
+
+    W, H = 1920, 1080
+    def to_screen(*pos):
+        if len(pos) == 1:
+            pos = pos[0]
+
+        pos: pygame.Vector2
+        pos -= center
+        pos = pos.elementwise() / extent
+        pos = pos.elementwise() * W
+        pos += (W / 2, H / 2)
+
+        # rx = (x - minx) / (maxx - minx)
+        # ry = (y - miny) / (maxy - miny)
+        return pos
+
+    center = pygame.Vector2()
+    extent = max(maxx-minx, maxy-miny) / 10
+
+    screen = pygame.display.set_mode((W, H))
+
+    def redraw():
+        screen.fill('#01132C')
+        pygame.draw.line(screen, 'grey', to_screen(0, 100), to_screen(0, -100))
+        pygame.draw.line(screen, 'grey', to_screen(100, 0), to_screen(-100, 0))
+        pygame.draw.line(screen, 'grey', to_screen(1, 100), to_screen(1, -100))
+
+
+        for shape in shapes:
+            if 'r' in shape:
+                p =shape['cx'], shape['cy']
+                r = max(2, shape['r'] * SHRINK_FACTOR / extent * W)
+                pygame.draw.circle(screen, '#F86624', to_screen(p), int(r))
+            else:
+                p1 = shape['x1'], shape['y1']
+                p2 = shape['x2'], shape['y2']
+                w = max(1, 0.01 / extent * W)
+                pygame.draw.line(screen, '#CEE076', to_screen(p1), to_screen(p2), int(w))
+                if w > 2:
+                    pygame.draw.circle(screen, '#CEE076', to_screen(p1), int(w / 2) - 1)
+                    pygame.draw.circle(screen, '#CEE076', to_screen(p2), int(w / 2) - 1)
+
+    redraw()
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            # quit on escape
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return
+                elif event.key == pygame.K_j:
+                    extent *= 1.5
+                    redraw()
+                elif event.key == pygame.K_k:
+                    extent /= 1.5
+                    redraw()
+            elif event.type == pygame.MOUSEWHEEL:
+                center.x += event.x * extent / 100
+                center.y += event.y * extent / 100
+                redraw()
+
+        pygame.time.wait(10)
+        pygame.display.flip()
+
+
+@plot.command('squares')
 @click.argument('radius', type=int, default=10)
-def squares(radius):
+def plot_squares(radius):
     board = get_board(radius)
 
     for y, row in enumerate(board):
