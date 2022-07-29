@@ -25,7 +25,7 @@ from constants import *
 from card_draw import draw_card
 
 
-COLORS = [None, [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
+COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
 
 def thue_gen():
     n = 0
@@ -84,9 +84,8 @@ def get_board(radius: int):
             board[x, y+1] if y + 1 < board.shape[1] else None,
         }
         options = {1, 2, 3, 4} - set(taken)
-        options = sorted(list(options))
         # tile = random.choice(list(options))
-        tile = options[t.send(len(options))]
+        tile = sorted(list(options))[t.send(len(options))]
         board[x, y] = tile
 
     return board
@@ -121,7 +120,7 @@ class Question:
         category = Category[d['category']]
         return cls(
             d['statement'],
-            tuple(d['position']),
+            (d['position'][0], d['position'][1]),
             category,
         )
 
@@ -169,7 +168,7 @@ class Deck:
     def radius(self) -> int:
         if not self.cards:
             return 0
-        return max((max(map(abs, p)) for p in (q.position for q in self.cards)), default=0)
+        return max((max(abs(p[0]), abs(p[1])) for p in (q.position for q in self.cards)), default=0)
 
     def show(self):
         by_pos = {
