@@ -24,8 +24,9 @@ import matplotlib.pyplot as plt
 from constants import *
 from card_draw import draw_card
 
+COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100],
+          [40, 67, 120]]
 
-COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
 
 def thue_gen():
     n = 0
@@ -33,25 +34,28 @@ def thue_gen():
         n += 1
         yield n.bit_count() % 2
 
+
 def thue_morse_random(bound):
     t = thue_gen()
 
     yield
     while True:
-        n = sum(2 ** i * next(t) for i in range(bound.bit_count() * 2)) % bound
+        n = sum(2**i * next(t) for i in range(bound.bit_count() * 2)) % bound
         bound = yield n
+
 
 def iterate_in_squares(bound=-1):
     """Yield all the points in Z², ordered by distance to the origin (in |·|_{sup})"""
     r = 0
     while r != bound:
-        for d in range(-r, r+1):
+        for d in range(-r, r + 1):
             yield r, d
             yield -r, d
             if abs(d) != r:
                 yield d, r
                 yield d, -r
         r += 1
+
 
 def print_square(color: int, txt='', fg=False):
     r, g, b = COLORS[int(color)]
@@ -71,17 +75,17 @@ def get_board(radius: int):
     t = thue_morse_random(4)
     next(t)
 
-    board = -np.ones((2 * radius + 1, 2 * radius +1))
+    board = -np.ones((2 * radius + 1, 2 * radius + 1))
     for dx, dy in iterate_in_squares(radius + 1):
         x = radius + dx
         y = radius + dy
 
         # N/S/E/W neighbours if they exist
         taken = {
-            board[x-1, y] if x - 1 >= 0 else None,
-            board[x+1, y] if x + 1 < board.shape[0] else None,
-            board[x, y-1] if y - 1 >= 0 else None,
-            board[x, y+1] if y + 1 < board.shape[1] else None,
+            board[x - 1, y] if x - 1 >= 0 else None,
+            board[x + 1, y] if x + 1 < board.shape[0] else None,
+            board[x, y - 1] if y - 1 >= 0 else None,
+            board[x, y + 1] if y + 1 < board.shape[1] else None,
         }
         options = {1, 2, 3, 4} - set(taken)
         # tile = random.choice(list(options))
@@ -89,6 +93,7 @@ def get_board(radius: int):
         board[x, y] = tile
 
     return board
+
 
 @dataclass(frozen=True)
 class Question:
@@ -104,8 +109,10 @@ class Question:
             self.category,
             metrics,
             is_face,
-            lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] + y),
-            lambda x, y: wind.speed_at(self.position[0] + x, self.position[1] + y),
+            lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] +
+                                       y),
+            lambda x, y: wind.speed_at(self.position[0] + x, self.position[1] +
+                                       y),
         )
 
     def to_dict(self):
@@ -168,13 +175,12 @@ class Deck:
     def radius(self) -> int:
         if not self.cards:
             return 0
-        return max((max(abs(p[0]), abs(p[1])) for p in (q.position for q in self.cards)), default=0)
+        return max((max(abs(p[0]), abs(p[1]))
+                    for p in (q.position for q in self.cards)),
+                   default=0)
 
     def show(self):
-        by_pos = {
-            tuple(q.position): q
-            for q in self.cards
-        }
+        by_pos = {tuple(q.position): q for q in self.cards}
 
         ids = []
         radius = self.radius + 1
@@ -198,13 +204,14 @@ class Deck:
 
 
 class WindMap:
+
     def __init__(self, wind: np.ndarray, scale: float = 1.0) -> None:
         self.scale = scale
         self.wind = wind
         self.u = wind[..., 0]
         self.v = wind[..., 1]
         self.angle = np.arctan2(self.v, self.u)
-        self.speed = self.u ** 2 + self.v ** 2
+        self.speed = self.u**2 + self.v**2
 
     def gps_to_index(self, lat: float, lon: float) -> tuple[float, float]:
         """
@@ -225,12 +232,10 @@ class WindMap:
         y1 = y0 + 1
         x_diff = x - x0
         y_diff = y - y0
-        return (
-            (1 - x_diff) * (1 - y_diff) * array[y0, x0]
-            + x_diff * (1 - y_diff) * array[y0, x1]
-            + (1 - x_diff) * y_diff * array[y1, x0]
-            + x_diff * y_diff * array[y1, x1]
-        )
+        return ((1 - x_diff) * (1 - y_diff) * array[y0, x0] + x_diff *
+                (1 - y_diff) * array[y0, x1] +
+                (1 - x_diff) * y_diff * array[y1, x0] +
+                x_diff * y_diff * array[y1, x1])
 
     @staticmethod
     def gps_from_equal_earth(x, y):
@@ -243,7 +248,7 @@ class WindMap:
         A23 = A2 * 3.
         A37 = A3 * 7.
         A49 = A4 * 9.
-        M = np.sqrt(3.)/2.
+        M = np.sqrt(3.) / 2.
         # Use Newtons Method, where:
         #   fy is the function you need the root of
         #   dy is the derivative of the function
@@ -257,12 +262,12 @@ class WindMap:
             p -= dp
             p2 = p**2
             p6 = p**6
-            fy = p*(A1 + A2*p2 + p6*(A3 + A4*p2)) - y
-            dy = A1 + A23*p2 + p6*(A37 + A49*p2)
-            dp = fy/dy
+            fy = p * (A1 + A2 * p2 + p6 * (A3 + A4 * p2)) - y
+            dy = A1 + A23 * p2 + p6 * (A37 + A49 * p2)
+            dp = fy / dy
             if (np.abs(dp) < limit).all(): break
-        long = M * x * dy/np.cos(p)
-        lat = np.arcsin(np.sin(p)/M)
+        long = M * x * dy / np.cos(p)
+        lat = np.arcsin(np.sin(p) / M)
         return long, lat
 
     def angle_at(self, x, y):
@@ -290,13 +295,16 @@ class WindMap:
 
 
 _TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
-def get_text_metrics(text: str = _TEXT,
-    font_size=FONT_SIZE,
-    top_margin=TOP_MARGIN,
-    margin=MARGIN,
-    line_spacing=LINE_SPACING,
-    canvas_size=CANVAS_SIZE,
-    font_file=FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
+
+
+def get_text_metrics(
+        text: str = _TEXT,
+        font_size=FONT_SIZE,
+        top_margin=TOP_MARGIN,
+        margin=MARGIN,
+        line_spacing=LINE_SPACING,
+        canvas_size=CANVAS_SIZE,
+        font_file=FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
 
     pygame.init()
     font = pygame.font.Font(font_file, font_size)
@@ -331,9 +339,8 @@ def get_text_metrics(text: str = _TEXT,
 
     descent = font.get_descent()
     ascent = font.get_ascent()
-    return [
-        (line, (rect.left, rect.top + ascent), rect)
-        for line, rect in zip(lines, rects)]
+    return [(line, (rect.left, rect.top + ascent), rect)
+            for line, rect in zip(lines, rects)]
 
 
 def load_questions() -> list[Question]:
@@ -342,8 +349,7 @@ def load_questions() -> list[Question]:
         Question(
             statement=row[0],
             tags=row[1].split(', '),
-        )
-        for row in questions
+        ) for row in questions
     ]
 
 
@@ -351,14 +357,18 @@ def load_questions() -> list[Question]:
 #  Command line interface  #
 # ------------------------ #
 
+
 @click.group()
 def cli():
     """Utility to manage decks of Vent Frais."""
     pass
 
+
 @cli.command(name='convert')
 @click.argument('file', type=click.Path(exists=True))
-@click.argument('out', type=click.Path(writable=True, dir_okay=False), default=WIND_PATH)
+@click.argument('out',
+                type=click.Path(writable=True, dir_okay=False),
+                default=WIND_PATH)
 def convert_gfs_data(file: str, out: str):
     """
     Convert GFS forcasts into numpy arrays with wind velocities.
@@ -385,7 +395,10 @@ def convert_gfs_data(file: str, out: str):
 @cli.command('add')
 @click.argument('category', type=click.Choice(Category.__members__))
 @click.argument('prompt', type=click.STRING)
-@click.option('-d', '--deck-path', type=click.Path(exists=True, path_type=Path), default=DECK_PATH)
+@click.option('-d',
+              '--deck-path',
+              type=click.Path(exists=True, path_type=Path),
+              default=DECK_PATH)
 def new_card(category, prompt, deck_path):
     """Create a new card and add it to the deck."""
 
@@ -394,8 +407,11 @@ def new_card(category, prompt, deck_path):
     deck_path.parent.mkdir(parents=True, exist_ok=True)
     deck_path.write_text(deck.to_json())
 
+
 @cli.command('new')
-@click.argument('wind', type=click.Path(exists=True, path_type=Path), default=WIND_PATH)
+@click.argument('wind',
+                type=click.Path(exists=True, path_type=Path),
+                default=WIND_PATH)
 @click.option('-s', '--scale', type=click.FLOAT, default=1)
 @click.option('-o', '--output', type=click.File('w'), default='-')
 def new_deck(wind, scale, output):
@@ -405,6 +421,7 @@ def new_deck(wind, scale, output):
 
     deck = Deck([], WindMap(np.load(wind), scale=scale))
     output.write(deck.to_json())
+
 
 @cli.command('show')
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
@@ -420,8 +437,14 @@ def show_deck(deck: Path):
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
 @click.argument('x', type=int)
 @click.argument('y', type=int)
-@click.option('-s', '--show', is_flag=True, help='Directly show the image afterwards.')
-@click.option('-b', '--back', is_flag=True, help='Generate the back of the card.')
+@click.option('-s',
+              '--show',
+              is_flag=True,
+              help='Directly show the image afterwards.')
+@click.option('-b',
+              '--back',
+              is_flag=True,
+              help='Generate the back of the card.')
 @click.option('-o', '--output', type=click.File('w'), default='-')
 def gen_svg(deck, x, y, show, back, output):
     deck = Deck.load(deck)
@@ -445,7 +468,7 @@ def plot(wind_file: str):
     x = wind[..., 0]
     y = wind[..., 1]
     angle = np.arctan2(y, x)
-    speed = x ** 2 + y ** 2
+    speed = x**2 + y**2
     # plt.streamplot(
     #     np.linspace(-90, 90, x.shape[1]),
     #     np.linspace(0, 360, x.shape[0]),
@@ -460,7 +483,7 @@ def plot(wind_file: str):
 
 
 @cli.command()
-@click.argument('radius', type=int, default = 10)
+@click.argument('radius', type=int, default=10)
 def squares(radius):
     board = get_board(radius)
 
@@ -474,14 +497,12 @@ def squares(radius):
 @click.argument('text', type=click.STRING, default=_TEXT)
 def text_test(text):
     W = 500
-    FONT_SIZE = 30
     TEXT_COLOR = (255, 255, 255)
-
 
     screen = pygame.display.set_mode((W, W))
     screen.fill((0, 0, 0))
     metrics = get_text_metrics(text)
-    font = pygame.font.Font(_FONT_FILE, FONT_SIZE)
+    font = pygame.font.Font(FONT_FILE, FONT_SIZE)
 
     for line, _, rect in metrics:
         t = font.render(line, True, TEXT_COLOR)
@@ -498,6 +519,7 @@ def text_test(text):
 
         pygame.time.wait(100)
         pygame.display.flip()
+
 
 if __name__ == '__main__':
     cli()
