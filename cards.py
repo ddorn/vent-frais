@@ -343,14 +343,14 @@ def get_text_metrics(
             for line, rect in zip(lines, rects)]
 
 
-def load_questions() -> list[Question]:
-    questions = csv.reader(QUESTION_PATH.open('r'))
-    return [
-        Question(
-            statement=row[0],
-            tags=row[1].split(', '),
-        ) for row in questions
-    ]
+# def load_questions() -> list[Question]:
+#     questions = csv.reader(QUESTION_PATH.open('r'))
+#     return [
+#         Question(
+#             statement=row[0],
+#             tags=row[1].split(', '),
+#         ) for row in questions
+#     ]
 
 
 # ------------------------ #
@@ -393,7 +393,7 @@ def convert_gfs_data(file: str, out: str):
 
 
 @cli.command('add')
-@click.argument('category', type=click.Choice(Category.__members__))
+@click.argument('category', type=click.Choice(list(Category.__members__)))
 @click.argument('prompt', type=click.STRING)
 @click.option('-d',
               '--deck-path',
@@ -429,8 +429,8 @@ def show_deck(deck: Path):
     """
     Show a deck.
     """
-    deck = Deck.load(deck)
-    deck.show()
+    the_deck = Deck.load(deck)
+    the_deck.show()
 
 
 @cli.command('gen')
