@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import enum
 import json
+import os
 from platform import python_branch
 from pydoc import describe
 from re import L
@@ -102,7 +103,7 @@ class Question:
     position: tuple[int, int]
     category: Category
 
-    def gen_svg(self, wind: WindMap):
+    def gen_svg(self, wind: WindMap, back: bool = False):
         Field2D = Callable[[float, float], float]
         def _gen_svg(prompt: str, category: Category, angles: Field2D, intensities: Field2D):
             a = [
@@ -168,6 +169,12 @@ class Deck:
                 self.cards.append(Question(prompt, pos, category))
                 break
 
+    def at(self, x, y):
+        for q in self.cards:
+            if q.position == (x, y):
+                return q
+        raise IndexError(f'No card at position {x},{y}.')
+
     @property
     def radius(self) -> int:
         if not self.cards:
@@ -196,7 +203,9 @@ class Deck:
 
         for i, q in enumerate(ids):
             print_square(q.category.value, i)
-            print(':', q.statement)
+            x, y = q.position
+            p = f' ({x},{y}):\t'
+            print(p + q.statement)
 
 
 class WindMap:
@@ -369,6 +378,29 @@ def show_deck(deck: Path):
     """
     deck = Deck.load(deck)
     deck.show()
+
+
+@cli.command('gen')
+@click.argument('deck', type=click.Path(exists=True, path_type=Path))
+@click.argument('x', type=int)
+@click.argument('y', type=int)
+@click.option('-s', '--show', is_flag=True, help='Directly show the image afterwards.')
+@click.option('-b', '--back', is_flag=True, help='Generate the back of the card.')
+@click.option('-o', '--output', type=click.File('w'), default='-')
+def gen_svg(deck, x, y, show, back, output):
+    deck = Deck.load(deck)
+    card = deck.at(x, y)
+    svg = card.gen_svg(deck.wind, back)
+    output.write(svg)
+    if show:
+        if output.name == '-':
+            p = Path(f'/tmp/vent-frais-card-{x}-{y}.svg')
+            p.write_text(svg)
+            p = str(p.absolute())
+        else:
+            p = output.name
+        os.system('firefox ' + p)
+
 
 @cli.command(name='plot')
 @click.argument('wind_file', type=click.Path(exists=True), default=WIND_PATH)
