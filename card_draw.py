@@ -235,10 +235,10 @@ def draw_card(
 
     NoMansLand = ProtectedZones(
         logo_xy=np.array([0.5, 0.5]),
-        logo_radius=0.128,
+        logo_radius=LOGO_RADIUS,
         is_face=is_face,
         line_rects=[r for _, _, r in text_metrics],
-        line_width=5,
+        line_width=LINE_WIDTH,
     )
 
     d = draw.Drawing(S, S, origin=(0, 0), displayInline=False)
