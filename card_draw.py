@@ -188,6 +188,7 @@ def draw_card(
 ):
 
     # TODO seed the card
+
     S = 500
     shrink_factor = 0.85
 
