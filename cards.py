@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage.filters import gaussian_filter
 
 from constants import *
-from card_draw import draw_card
+from card_draw import draw_card, generate_all_shapes
 
 COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100],
           [40, 67, 120]]
@@ -104,10 +104,6 @@ class Question:
     category: Category
 
     def gen_svg(self, wind: WindMap, is_face: bool = False):
-        Field2D = Callable[[float, float], float]
-
-        angle = lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] + y)
-        speed = lambda x, y: 20 + wind.speed_at(self.position[0] + x, self.position[1] + y)
 
         def heatmap(f):
             v = [[f(x / 100, y / 100) for x in range(100)] for y in range(100)]
@@ -213,13 +209,9 @@ class WindMap:
 
     def __init__(self, wind: np.ndarray, scale: float = 1.0) -> None:
         self.scale = scale
-        self.wind = wind
-        u = wind[..., 0]
-        v = wind[..., 1]
-        u = gaussian_filter(u, 3)
-        v = gaussian_filter(v, 3)
-        self.angle = np.arctan2(v, u)
-        self.speed = u**2 + v**2
+        u = gaussian_filter(wind[..., 0], 3)
+        v = gaussian_filter(wind[..., 1], 3)
+        self.wind = np.stack((u, v), axis=-1)
 
     def gps_to_index(self, lat: float, lon: float) -> tuple[float, float]:
         """
@@ -281,17 +273,22 @@ class WindMap:
         lat = np.arcsin(np.sin(p) / M)
         return long, lat
 
-    def angle_at(self, x, y):
+
+    def wind_at(self, x, y) -> tuple[float, float]:
         # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
         lat, lon = x * self.scale, y * self.scale
         x, y = self.gps_to_index(lat, lon)
-        return self.bilinear_interpolation(self.angle, x, y)
+        u = self.bilinear_interpolation(self.wind[..., 0], x, y)
+        v = self.bilinear_interpolation(self.wind[..., 1], x, y)
+        return u, v
+
+    def angle_at(self, x, y):
+        u, v = self.wind_at(x, y)
+        return np.arctan2(v, u)
 
     def speed_at(self, x, y):
-        # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
-        lat, lon = x * self.scale, y * self.scale
-        x, y = self.gps_to_index(lat, lon)
-        return self.bilinear_interpolation(self.speed, x, y)
+        u, v = self.wind_at(x, y)
+        return u ** 2 + v ** 2
 
     def to_dict(self):
         return {
@@ -403,6 +400,20 @@ def convert_gfs_data(file: str, out: str):
     np.save(out, velocities)
 
     return velocities
+
+@cli.command(name='gen')
+@click.argument('file', type=click.Path(exists=True))
+@click.argument('out', type=click.File('w'))
+@click.option('-s', '--scale', type=float, default=20.0)
+@click.option('-d', '--min-density', type=float, default=20.0)
+def generate_shapes(file, out, scale, min_density):
+    """Convert a wind .npy file into a shapefile."""
+
+    wind = WindMap(np.load(file), scale)
+    shapes = generate_all_shapes(wind.angle_at, lambda x, y: min_density + wind.speed_at(x, y))
+
+    out.write(json.dumps(shapes))
+
 
 
 @cli.command('add')
