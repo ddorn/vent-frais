@@ -1,6 +1,7 @@
 #!/bin/env python3
 
 from __future__ import annotations
+import base64
 
 import csv
 import enum
@@ -211,7 +212,7 @@ class Deck:
 class WindMap:
 
     def __init__(self, wind: np.ndarray, scale: float = 1.0) -> None:
-        self.scale = scale * 10
+        self.scale = scale
         self.wind = wind
         u = wind[..., 0]
         v = wind[..., 1]
@@ -294,14 +295,14 @@ class WindMap:
 
     def to_dict(self):
         return {
-            'wind': self.wind.tolist(),
+            'wind': base64.b85encode(self.wind.tobytes()).decode('utf-8'),
             'scale': self.scale,
         }
 
     @classmethod
     def from_dict(cls, d: dict):
         return cls(
-            np.array(d['wind']),
+            np.frombuffer(base64.b85decode(d['wind'].encode('utf-8'))),
             d['scale'],
         )
 
@@ -444,6 +445,16 @@ def show_deck(deck: Path):
     the_deck = Deck.load(deck)
     the_deck.show()
 
+
+@cli.command('edit')
+@click.argument('deck', type=click.Path(exists=True, path_type=Path))
+@click.option('-s', '--scale', type=int)
+def edit_deck(deck: Path, scale = None):
+    """Edit a deck."""
+    the_deck = Deck.load(deck)
+    if scale is not None:
+        the_deck.wind.scale = scale
+    deck.write_text(the_deck.to_json())
 
 @cli.command('gen')
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
