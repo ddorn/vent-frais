@@ -203,7 +203,7 @@ def draw_card(
     # TODO seed the card
 
     S = 500
-    shrink_factor = 0.85
+    shrink_factor = SHRINK_FACTOR
     offset = (card_position[0], card_position[1]) #position of the bottom left corner
 
     NoMansLand = ProtectedZones(
@@ -347,9 +347,9 @@ def generate_all_shapes(angles: Field2D = lambda x, y: 0,
                             "t":"c"
                         })
         else:
-
+            angle = angles(p[0], p[1])
             x1, y1, x2, y2 = getLine(p[0], p[1], angle, radii[i],
-                                        shrink_factor)
+                                        SHRINK_FACTOR)
             shape_file.append(
                 {
                     "x1": x1,
