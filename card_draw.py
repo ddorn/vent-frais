@@ -7,9 +7,11 @@ import scipy
 from scipy.spatial import Voronoi, voronoi_plot_2d
 import numpy as np
 import matplotlib.pyplot as plt
-import pygame 
+import contextlib
+with contextlib.redirect_stdout(None):
+    import pygame
 import drawSvg as draw
-import pygame
+
 from dataclasses import dataclass
 
 
@@ -186,6 +188,7 @@ class ProtectedZones:
     logo_radius: float
     is_face: bool
     line_rects: list[pygame.Rect]
+    line_width: float
 
     RECT_INFLATION = 30
 
@@ -207,7 +210,7 @@ class ProtectedZones:
             p1 = np.array([shape_dict["x1"], shape_dict["y1"]])
             p2 = np.array([shape_dict["x2"], shape_dict["y2"]])
             if self.is_face:
-                inflation = self.RECT_INFLATION + LINE_WIDTH
+                inflation = self.RECT_INFLATION + self.line_width
                 for rect in self.line_rects:
                     if rect.inflate(inflation, inflation).clipline(self.to_pygame(p1), self.to_pygame(p2)):
                         return True
@@ -220,7 +223,7 @@ class ProtectedZones:
         return (point[0] * 500, 500 - point[1] * 500)
 
 
-def draw_card(card_type="perso-easy", card_face="dos" ):
+def draw_card(card_type="perso-hard", card_face="dos",  text="Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"):
         # TODO seed the card
     S = 500
     SHOW_VOR = False
@@ -236,23 +239,24 @@ def draw_card(card_type="perso-easy", card_face="dos" ):
     NoMansLand = ProtectedZones(
         logo_xy=np.array([0.5, 0.5]),
         logo_radius=0.128, 
+        line_width=LINE_WIDTH,
         is_face=CARD_FACE == "ventre",
-        line_rects=[r for _, _, r in get_text_metrics(_TEXT)]
+        line_rects=[r for _, _, r in get_text_metrics(text)]
     )
 
 
     d = draw.Drawing(S, S, origin=(0,0), displayInline=False)
 
 
-    bg_rect = draw.Rectangle(0,0,S,S, fill=COLOR_PALETTES[card_type]['background'], rx=40, ry=40)
-    d.append(bg_rect)
+
+    d.append(draw.Rectangle(0,0,S,S, fill=COLOR_PALETTES[card_type]['background'], rx=40, ry=40))
 
 
     bg = draw.ClipPath()
-    bg.append(bg_rect)
+    bg.append(draw.Rectangle(0,0,S,S, fill=COLOR_PALETTES[card_type]['background'], rx=40, ry=40))
 
     if CARD_FACE=="ventre": #font size 1000 = 1 en coo
-        for line, (x, y), rect in get_text_metrics(_TEXT):
+        for line, (x, y), rect in get_text_metrics(text):
             d.append(draw.Text([line], 30, x, 500 - y, fill='white', style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Arbutus Slab';-inkscape-font-specification:'Arbutus Slab'"))
 
 
@@ -260,9 +264,13 @@ def draw_card(card_type="perso-easy", card_face="dos" ):
         #d.append(draw.Circle(NoMansLand.LOGO_XY[0]*S, NoMansLand.LOGO_XY[1]*S, NoMansLand.LOGO_RADIUS*S,
         #            fill="violet", stroke='none', style="opacity:0.5"))
 
-        d.append(draw.Image(NoMansLand.logo_xy[0]*S-LOGO_W/2, 
-                            NoMansLand.logo_xy[1]*S-LOGO_H/2, LOGO_W, LOGO_H,embed=True,
-                            path=f"logo/logo-{card_type}.svg"))      
+        # d.append(draw.Image(NoMansLand.logo_xy[0]*S-LOGO_W/2, 
+        #                     NoMansLand.logo_xy[1]*S-LOGO_H/2, LOGO_W, LOGO_H,embed=True,
+        #                     path=f"logo/logo-{card_type}.svg"))    
+
+        with open(f"logo/logo-{card_type}-raw.svg", "r") as f:
+            logo_svg = f.read()
+        d.append(draw.Raw(logo_svg))                  
 
         #d.append(draw.Circle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2, 
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2, 0.01*S,
@@ -308,10 +316,7 @@ def draw_card(card_type="perso-easy", card_face="dos" ):
                     d.append(draw.Line(p1[0]*S, p1[1]*S, p2[0]*S, p2[1]*S,
                         stroke='red', stroke_width=0.5, fill='none'))
             
-
     d.setPixelScale(1.5)  # Set number of pixels per geometry unit
-    d.saveSvg('example.svg')
-    d.rasterize()  # Display as PNG
 
     return d.asSvg()
 
