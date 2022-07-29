@@ -45,12 +45,16 @@ def random_weighted(cum_sums: list[float]) -> float:
     # print('r x0 y0 y1', r, x0, y0, y1)
     # print('a b c', a, b, c)
     # we solve a*x**2 + b*x + c == 0
-    x = (-b + np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+    x = (-b + np.sqrt(b**2 - 4 * a * c)) / (2 * a)
     # print('x', x)
 
     return x0 + x
 
-def gen_points(density: Callable[[float, float], float] = lambda x, y: 1, grid_size: int = 200, w=1.0, h=1.0):
+
+def gen_points(density: Callable[[float, float], float] = lambda x, y: 1,
+               grid_size: int = 200,
+               w=1.0,
+               h=1.0):
     line_weights: np.ndarray = np.array([
         cum_sum([
             density(x * w / grid_size, y * h / grid_size)
@@ -63,7 +67,8 @@ def gen_points(density: Callable[[float, float], float] = lambda x, y: 1, grid_s
     while True:
         x = random_weighted(col_weight)
         p = x - int(x)
-        y_weights = line_weights[int(x)] * (1 - p) + p * line_weights[int(x) + 1]
+        y_weights = line_weights[int(x)] * (1 - p) + p * line_weights[int(x) +
+                                                                      1]
         y = random_weighted(y_weights)
         point = np.array([x * w, y * h]) / grid_size
         yield point
@@ -195,7 +200,8 @@ Field2D = Callable[[float, float], float]
 
 
 def is_in_square(shape, offset, l, m):
-    def is_point_in_square(x,y):
+
+    def is_point_in_square(x, y):
         if x > offset[0]-m and x < offset[0]+l+m and \
             y > offset[1]-m and y < offset[1]+l+m:
             return True
@@ -206,9 +212,10 @@ def is_in_square(shape, offset, l, m):
         return is_point_in_square(shape["cx"], shape["cy"])
     elif shape["t"] == "l":
         return is_point_in_square(shape["x1"], shape["y1"]) or \
-                is_point_in_square(shape["x2"], shape["y2"]) 
+                is_point_in_square(shape["x2"], shape["y2"])
     else:
         raise ValueError("Undefined shape type.")
+
 
 def draw_card(
     card_type: Category,
@@ -222,7 +229,8 @@ def draw_card(
 
     S = 500
     shrink_factor = 0.85
-    offset = (card_position[0], card_position[1]) #position of the bottom left corner
+    offset = (card_position[0], card_position[1]
+              )  #position of the bottom left corner
 
     NoMansLand = ProtectedZones(
         logo_xy=np.array([0.5, 0.5]),
@@ -286,25 +294,23 @@ def draw_card(
         #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2,LOGO_W,LOGO_H, fill="white", style="opacity:0.5"))
 
-
     for i, shape in enumerate(shape_file):
-        if is_in_square(shape, offset, 2):
+        if is_in_square(shape, offset, 1, 1):
 
-            if shape["t"] == "c": #if circle
+            if shape["t"] == "c":  #if circle
                 cx = shape["cx"] - offset[0]
                 cy = shape["cy"] - offset[1]
-                if is_face: ## flip the face
-                    cx = 1-cx
+                if is_face:  ## flip the face
+                    cx = 1 - cx
 
                 shape_color = rd.choice(COLOR_PALETTES[card_type]['dots'])
-                if not NoMansLand.collide(
-                    {
+                if not NoMansLand.collide({
                         "cx": cx,
                         "cy": cy,
                         "r": shape["r"]
-                    }, "circle"):
+                }, "circle"):
                     d.append(
-                        draw.Circle(cx* S,
+                        draw.Circle(cx * S,
                                     cy * S,
                                     shape["r"] * S * shrink_factor,
                                     fill=shape_color,
@@ -318,9 +324,9 @@ def draw_card(
                 x2 = shape["x2"] - offset[0]
                 y2 = shape["y2"] - offset[1]
 
-                if is_face: ## flip the face
-                    x1 = 1-x1
-                    x2 = 1-x2
+                if is_face:  ## flip the face
+                    x1 = 1 - x1
+                    x2 = 1 - x2
 
                 if not NoMansLand.collide(
                     {
@@ -331,14 +337,14 @@ def draw_card(
                     }, "line"):
                     d.append(
                         draw.Line(x1 * S,
-                                y1 * S,
-                                x2 * S,
-                                y2 * S,
-                                fill='none',
-                                stroke_width=LINE_WIDTH,
-                                stroke=shape_color,
-                                stroke_linecap="round",
-                                clip_path=bg))
+                                  y1 * S,
+                                  x2 * S,
+                                  y2 * S,
+                                  fill='none',
+                                  stroke_width=LINE_WIDTH,
+                                  stroke=shape_color,
+                                  stroke_linecap="round",
+                                  clip_path=bg))
             else:
                 raise ValueError("Undefined shape type.")
 
@@ -352,31 +358,27 @@ def generate_all_shapes(angles: Field2D = lambda x, y: 0,
     np.random.seed(42)
 
     pts, radii, vor = get_relaxed_points(intensity)
-    shape_file = ""
+    shape_file = []
 
     for i, p in enumerate(pts):
 
         if np.random.random() < PROP_CIRCLE:
-            shape_file.append(
-                        {
-                            "cx": p[0],
-                            "cy": p[1],
-                            "r": radii[i],
-                            "t":"c"
-                        })
+            shape_file.append({
+                "cx": p[0],
+                "cy": p[1],
+                "r": radii[i],
+                "t": "c"
+            })
         else:
 
             x1, y1, x2, y2 = getLine(p[0], p[1], angle, radii[i],
-                                        shrink_factor)
-            shape_file.append(
-                {
-                    "x1": x1,
-                    "y1": y1,
-                    "x2": x2,
-                    "y2": y2,
-                    "t":"l"
-                })
+                                     shrink_factor)
+            shape_file.append({
+                "x1": x1,
+                "y1": y1,
+                "x2": x2,
+                "y2": y2,
+                "t": "l"
+            })
 
     return shape_file
-
-
