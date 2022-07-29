@@ -55,10 +55,7 @@ def get_centroid(cell):
     return np.array(Polygon(cell).centroid.coords)[0]
 
 
-def get_relaxed_points():
-
-    def density(x, y):
-        return 1.
+def get_relaxed_points(density):
 
     points = []
     N = 1000
@@ -243,7 +240,7 @@ def draw_card(
         #                     NoMansLand.logo_xy[1]*S-LOGO_H/2, LOGO_W, LOGO_H,embed=True,
         #                     path=f"logo/logo-{card_type}.svg"))
 
-        with open(f"logo/logo-{card_type}-raw.svg", "r") as f:
+        with open(card_type.logo_name, "r") as f:
             logo_svg = f.read()
         d.append(draw.Raw(logo_svg))
 
@@ -254,7 +251,7 @@ def draw_card(
         #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2,LOGO_W,LOGO_H, fill="white", style="opacity:0.5"))
 
-    pts, radii, vor = get_relaxed_points()
+    pts, radii, vor = get_relaxed_points(intensity)
 
     for i, p in enumerate(pts):
         if SHOW_DESIGN:

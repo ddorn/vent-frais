@@ -20,6 +20,7 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.ndimage.filters import gaussian_filter
 
 from constants import *
 from card_draw import draw_card
@@ -104,16 +105,20 @@ class Question:
     def gen_svg(self, wind: WindMap, is_face: bool = False):
         Field2D = Callable[[float, float], float]
 
+        angle = lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] + y)
+        speed = lambda x, y: wind.speed_at(self.position[0] + x, self.position[1] + y)
+
+        def heatmap(f):
+            v = [[f(x / 100, y / 100) for x in range(100)] for y in range(100)]
+            plt.imshow(v)
+
+        heatmap(angle)
+        plt.show()
+        heatmap(speed)
+        plt.show()
+
         metrics = get_text_metrics(self.statement)
-        return draw_card(
-            self.category,
-            metrics,
-            is_face,
-            lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] +
-                                       y),
-            lambda x, y: wind.speed_at(self.position[0] + x, self.position[1] +
-                                       y),
-        )
+        return draw_card(self.category, metrics, is_face, angle, speed)
 
     def to_dict(self):
         return {
@@ -206,19 +211,23 @@ class Deck:
 class WindMap:
 
     def __init__(self, wind: np.ndarray, scale: float = 1.0) -> None:
-        self.scale = scale
+        self.scale = scale * 10
         self.wind = wind
-        self.u = wind[..., 0]
-        self.v = wind[..., 1]
-        self.angle = np.arctan2(self.v, self.u)
-        self.speed = self.u**2 + self.v**2
+        u = wind[..., 0]
+        v = wind[..., 1]
+        u = gaussian_filter(u, 3)
+        v = gaussian_filter(v, 3)
+        self.angle = np.arctan2(v, u)
+        self.speed = u**2 + v**2
 
     def gps_to_index(self, lat: float, lon: float) -> tuple[float, float]:
         """
         Convert GPS coordinates to index in the wind array.
         """
-        x = lon / 360 * self.wind.shape[1]
-        y = (90 - lat) / 180 * self.wind.shape[0]
+        # print('lat, lon', lat, lon, self.wind.shape)
+        x = (180 + lon) % 360 / 360 * self.wind.shape[1]
+        y = (90 + lat) % 180 / 180 * self.wind.shape[0]
+        # print('xy', x, y)
         return x, y
 
     @staticmethod
@@ -265,18 +274,21 @@ class WindMap:
             fy = p * (A1 + A2 * p2 + p6 * (A3 + A4 * p2)) - y
             dy = A1 + A23 * p2 + p6 * (A37 + A49 * p2)
             dp = fy / dy
-            if (np.abs(dp) < limit).all(): break
+            print('p', i, p, np.sin(p), np.sin(p) / M)
+            if (np.abs(dp) < limit): break
         long = M * x * dy / np.cos(p)
         lat = np.arcsin(np.sin(p) / M)
         return long, lat
 
     def angle_at(self, x, y):
-        lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        lat, lon = x * self.scale, y * self.scale
         x, y = self.gps_to_index(lat, lon)
         return self.bilinear_interpolation(self.angle, x, y)
 
     def speed_at(self, x, y):
-        lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        lat, lon = x * self.scale, y * self.scale
         x, y = self.gps_to_index(lat, lon)
         return self.bilinear_interpolation(self.speed, x, y)
 
@@ -343,14 +355,14 @@ def get_text_metrics(
             for line, rect in zip(lines, rects)]
 
 
-def load_questions() -> list[Question]:
-    questions = csv.reader(QUESTION_PATH.open('r'))
-    return [
-        Question(
-            statement=row[0],
-            tags=row[1].split(', '),
-        ) for row in questions
-    ]
+# def load_questions() -> list[Question]:
+#     questions = csv.reader(QUESTION_PATH.open('r'))
+#     return [
+#         Question(
+#             statement=row[0],
+#             tags=row[1].split(', '),
+#         ) for row in questions
+#     ]
 
 
 # ------------------------ #
@@ -393,7 +405,7 @@ def convert_gfs_data(file: str, out: str):
 
 
 @cli.command('add')
-@click.argument('category', type=click.Choice(Category.__members__))
+@click.argument('category', type=click.Choice(list(Category.__members__)))
 @click.argument('prompt', type=click.STRING)
 @click.option('-d',
               '--deck-path',
@@ -429,8 +441,8 @@ def show_deck(deck: Path):
     """
     Show a deck.
     """
-    deck = Deck.load(deck)
-    deck.show()
+    the_deck = Deck.load(deck)
+    the_deck.show()
 
 
 @cli.command('gen')
