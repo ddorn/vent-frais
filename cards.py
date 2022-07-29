@@ -15,14 +15,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from pprint import pprint
 
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+
 import pygame
 import numpy as np
 import matplotlib.pyplot as plt
 
-DATA = Path(__file__).parent / 'data'
-QUESTION_PATH = DATA / 'questions.csv'
-DECK_PATH = DATA / 'deck.json'
-WIND_PATH = DATA / 'wind.npy'
+from constants import *
+from card_draw import draw_card
+
 
 COLORS = [None, [255, 165, 0], [230, 240, 250], [65, 160, 100], [40, 67, 120]]
 
@@ -90,31 +91,20 @@ def get_board(radius: int):
 
     return board
 
-
-class Category(enum.Enum):
-    PERSO_EASY = 1
-    PERSO_HARD = 2
-    ABOUT_THE_WORLD = 3
-    REGARD_SUR_LE_MONDE = 4
-
 @dataclass(frozen=True)
 class Question:
     statement: str
     position: tuple[int, int]
     category: Category
 
-    def gen_svg(self, wind: WindMap, back: bool = False):
+    def gen_svg(self, wind: WindMap, is_face: bool = False):
         Field2D = Callable[[float, float], float]
-        def _gen_svg(prompt: str, category: Category, angles: Field2D, intensities: Field2D):
-            a = [
-                [angles(x / 100, y / 100) for x in range(100)]
-                for y in range(100)
-            ]
-            plt.imshow(a, cmap='hsv')
 
-        return _gen_svg(
-            self.statement,
+        metrics = get_text_metrics(self.statement)
+        return draw_card(
             self.category,
+            metrics,
+            is_face,
             lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] + y),
             lambda x, y: wind.speed_at(self.position[0] + x, self.position[1] + y),
         )
@@ -244,7 +234,7 @@ class WindMap:
         )
 
     @staticmethod
-    def gps_from_equal_earth(self, x, y):
+    def gps_from_equal_earth(x, y):
         iterations = 20
         limit = 1e-8
         A1 = 1.340264
@@ -298,6 +288,53 @@ class WindMap:
             np.array(d['wind']),
             d['scale'],
         )
+
+
+_TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
+def get_text_metrics(text: str = _TEXT,
+    font_size=FONT_SIZE,
+    top_margin=TOP_MARGIN,
+    margin=MARGIN,
+    line_spacing=LINE_SPACING,
+    canvas_size=CANVAS_SIZE,
+    font_file=FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
+
+    pygame.init()
+    font = pygame.font.Font(font_file, font_size)
+
+    def wrapped_text(txt: str, max_width):
+        words = txt.split(' ')
+        lines = []
+        while words:
+            line: list[str] = []
+            while font.size(" ".join(line))[0] < max_width:
+                if not words:
+                    break
+                line.append(words.pop(0))
+            else:
+                words.insert(0, line.pop())
+            lines.append(' '.join(line))
+        return lines
+
+    def center_text(midtop: tuple[int, int], *lines: str):
+        rects = []
+        y = midtop[1]
+        for line in lines:
+            r = pygame.Rect(0, 0, *font.size(line))
+            r.midtop = midtop[0], y
+            rects.append(r)
+            y += r.height + line_spacing
+
+        return rects
+
+    lines = wrapped_text(text, canvas_size - margin * 2)
+    rects = center_text((canvas_size // 2, top_margin), *lines)
+
+    descent = font.get_descent()
+    ascent = font.get_ascent()
+    return [
+        (line, (rect.left, rect.top + ascent), rect)
+        for line, rect in zip(lines, rects)]
 
 
 def load_questions() -> list[Question]:
@@ -390,10 +427,10 @@ def show_deck(deck: Path):
 def gen_svg(deck, x, y, show, back, output):
     deck = Deck.load(deck)
     card = deck.at(x, y)
-    svg = card.gen_svg(deck.wind, back)
+    svg = card.gen_svg(deck.wind, not back)
     output.write(svg)
     if show:
-        if output.name == '-':
+        if output.name == '<stdout>':
             p = Path(f'/tmp/vent-frais-card-{x}-{y}.svg')
             p.write_text(svg)
             p = str(p.absolute())
@@ -433,46 +470,6 @@ def squares(radius):
             print_square(tile, '**' if x == y == radius else '')
         print('\033[0m')
 
-
-_TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
-_FONT_FILE = 'font/ArbutusSlab-Regular.ttf'
-def get_text_metrics(text: str = _TEXT, font_size=30, top_margin=100, margin=30, line_spacing=0, canvas_size=500, font_file=_FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
-    pygame.init()
-    font = pygame.font.Font(font_file, font_size)
-
-    def wrapped_text(txt: str, max_width):
-        words = txt.split(' ')
-        lines = []
-        while words:
-            line = []
-            while font.size(" ".join(line))[0] < max_width:
-                if not words:
-                    break
-                line.append(words.pop(0))
-            else:
-                words.insert(0, line.pop())
-            lines.append(' '.join(line))
-        return lines
-
-    def center_text(midtop: tuple[int, int], *lines: str):
-        rects = []
-        y = midtop[1]
-        for line in lines:
-            r = pygame.Rect(0, 0, *font.size(line))
-            r.midtop = midtop[0], y
-            rects.append(r)
-            y += r.height + line_spacing
-
-        return rects
-
-    lines = wrapped_text(text, canvas_size - margin * 2)
-    rects = center_text((canvas_size // 2, top_margin), *lines)
-
-    descent = font.get_descent()
-    return [
-        (line, (rect.left, rect.bottom - descent), rect)
-        for line, rect in zip(lines, rects)
-    ]
 
 @cli.command()
 @click.argument('text', type=click.STRING, default=_TEXT)

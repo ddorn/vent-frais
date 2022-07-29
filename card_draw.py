@@ -1,3 +1,4 @@
+from __future__ import annotations
 from bisect import bisect_left
 from random import uniform
 from typing import Callable
@@ -7,20 +8,17 @@ import scipy
 from scipy.spatial import Voronoi, voronoi_plot_2d
 import numpy as np
 import matplotlib.pyplot as plt
-import contextlib
-with contextlib.redirect_stdout(None):
-    import pygame
-import drawSvg as draw
-
 from dataclasses import dataclass
 
+import drawSvg as draw
 
-COLOR_PALETTES = {
-    "perso-easy" : {"background": "#01132c", "dots" : ["#fed9b7", "#ffffff", "#f07167"], "lines" : ["#ffffff", "#00afb9", "#0081a7"]},
-    "perso-hard" : {"background": "#01132c", "dots" : ["#f86624", "#f9c80e", "#ea3546"], "lines" : ["#cee076", "#43bccd", "#662e9b"]},
-    "about-the-world" : {"background": "#01132c", "dots" : ["#a4574d", "#43bccd", "#cee076"], "lines" : ["#a4574d", "#43bccd", "#cee076"]},
-    "view-about-the-world" : {"background": "#01132c", "dots" : ["#41ead4", "#fbff12", "#ff206e"], "lines" : ["#41ead4", "#fbff12", "#ff206e"]}
-}
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    import pygame
+
+
+from constants import *
+
 
 def cum_sum(l: list):
     ret = l[:]
@@ -51,7 +49,7 @@ def gen_points(density):
         if not((x,y) in deja_vu):
             yield (np.array([x, y]) * GRID_SIZE)
             deja_vu.add((x,y))
-            
+
 
 def get_centroid(cell):
     return np.array(Polygon(cell).centroid.coords)[0]
@@ -88,11 +86,11 @@ def get_relaxed_points():
     for it in range(MAX_ITERATION):
 
         vor = Voronoi(points, qhull_options = "Qbb Qz Qc")
-        
+
         centroids = []
 
         for k in range(N):
-            
+
             if -1 in vor.regions[vor.point_region[k]]:
                 center = points[k]
             else:
@@ -123,8 +121,8 @@ def get_relaxed_points():
             #print(p1, p2, p3)
             rad = min(rad, np.linalg.norm(np.cross(p2-p1, p1-p3))/np.linalg.norm(p2-p1))
         inner_circle_radii.append(rad)
-    
-    
+
+
     return centroids, inner_circle_radii, vor
 
 
@@ -138,53 +136,9 @@ def getLine(cx, cy, angle, length, sf):
     y2 = cy - np.sin(angle)*l
     return x1, y1, x2, y2
 
-
-
-
-_TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
-_FONT_FILE = 'font/ArbutusSlab-Regular.ttf'
-def get_text_metrics(text: str = _TEXT, font_size=30, top_margin=100, margin=30, line_spacing=0, canvas_size=500, font_file=_FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
-    pygame.init()
-    font = pygame.font.Font(font_file, font_size)
-
-    def wrapped_text(txt: str, max_width):
-        words = txt.split(' ')
-        lines = []
-        while words:
-            line = []
-            while font.size(" ".join(line))[0] < max_width:
-                if not words:
-                    break
-                line.append(words.pop(0))
-            else:
-                words.insert(0, line.pop())
-            lines.append(' '.join(line))
-        return lines
-
-    def center_text(midtop: tuple[int, int], *lines: str):
-        rects = []
-        y = midtop[1]
-        for line in lines:
-            r = pygame.Rect(0, 0, *font.size(line))
-            r.midtop = midtop[0], y
-            rects.append(r)
-            y += r.height + line_spacing
-
-        return rects
-
-    lines = wrapped_text(text, canvas_size - margin * 2)
-    rects = center_text((canvas_size // 2, top_margin), *lines)
-
-    descent = font.get_descent()
-    ascent = font.get_ascent()
-    return [
-        (line, (rect.left, rect.top + ascent), rect)
-        for line, rect in zip(lines, rects)]
-
-
 @dataclass
 class ProtectedZones:
-    logo_xy: np.array
+    logo_xy: np.ndarray
     logo_radius: float
     is_face: bool
     line_rects: list[pygame.Rect]
@@ -206,7 +160,7 @@ class ProtectedZones:
             else:
                 return np.linalg.norm(self.logo_xy - p) <= (self.logo_radius + r)
 
-        elif shape_type == "line":
+        else:  # shape_type == "line":
             p1 = np.array([shape_dict["x1"], shape_dict["y1"]])
             p2 = np.array([shape_dict["x2"], shape_dict["y2"]])
             if self.is_face:
@@ -223,25 +177,25 @@ class ProtectedZones:
         return (point[0] * 500, 500 - point[1] * 500)
 
 
-def draw_card(card_type="perso-hard", card_face="dos",  text="Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"):
+Field2D = Callable[[float, float], float]
+def draw_card(
+    card_type: Category,
+    text_metrics: list[tuple[str, tuple[int, int], pygame.Rect]],
+    is_face: bool = False,
+    angles: Field2D = lambda x, y: 0,
+    intensity: Field2D = lambda x, y: 0,
+    ):
+
         # TODO seed the card
     S = 500
-    SHOW_VOR = False
-    SHOW_DESIGN = True
     shrink_factor = 0.85
-    PROP_CIRCLE = 0.5
-    LINE_WIDTH = 5
-
-    LOGO_H = 353*0.3
-    LOGO_W = 273*0.3
-    CARD_FACE = card_face
 
     NoMansLand = ProtectedZones(
         logo_xy=np.array([0.5, 0.5]),
-        logo_radius=0.128, 
-        line_width=LINE_WIDTH,
-        is_face=CARD_FACE == "ventre",
-        line_rects=[r for _, _, r in get_text_metrics(text)]
+        logo_radius=0.128,
+        is_face=is_face,
+        line_rects=[r for _, _, r in text_metrics],
+        line_width=5,
     )
 
 
@@ -251,32 +205,31 @@ def draw_card(card_type="perso-hard", card_face="dos",  text="Quel événement d
 
     d.append(draw.Rectangle(0,0,S,S, fill=COLOR_PALETTES[card_type]['background'], rx=40, ry=40))
 
-
     bg = draw.ClipPath()
     bg.append(draw.Rectangle(0,0,S,S, fill=COLOR_PALETTES[card_type]['background'], rx=40, ry=40))
 
-    if CARD_FACE=="ventre": #font size 1000 = 1 en coo
-        for line, (x, y), rect in get_text_metrics(text):
+    if is_face:
+        # font size 1000 = 1 en coo
+        for line, (x, y), rect in text_metrics:
             d.append(draw.Text([line], 30, x, 500 - y, fill='white', style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Arbutus Slab';-inkscape-font-specification:'Arbutus Slab'"))
 
-
-    elif CARD_FACE == "dos":
+    else:
         #d.append(draw.Circle(NoMansLand.LOGO_XY[0]*S, NoMansLand.LOGO_XY[1]*S, NoMansLand.LOGO_RADIUS*S,
         #            fill="violet", stroke='none', style="opacity:0.5"))
 
-        # d.append(draw.Image(NoMansLand.logo_xy[0]*S-LOGO_W/2, 
+        # d.append(draw.Image(NoMansLand.logo_xy[0]*S-LOGO_W/2,
         #                     NoMansLand.logo_xy[1]*S-LOGO_H/2, LOGO_W, LOGO_H,embed=True,
-        #                     path=f"logo/logo-{card_type}.svg"))    
+        #                     path=f"logo/logo-{card_type}.svg"))
 
         with open(f"logo/logo-{card_type}-raw.svg", "r") as f:
             logo_svg = f.read()
-        d.append(draw.Raw(logo_svg))                  
+        d.append(draw.Raw(logo_svg))
 
-        #d.append(draw.Circle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2, 
+        #d.append(draw.Circle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2, 0.01*S,
         #           fill="red", stroke='none'))
-        
-        #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2, 
+
+        #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2,LOGO_W,LOGO_H, fill="white", style="opacity:0.5"))
 
 
@@ -297,8 +250,8 @@ def draw_card(card_type="perso-hard", card_face="dos",  text="Quel événement d
                 angle = np.random.uniform(0, 6.28)
                 x1,y1,x2, y2 = getLine(p[0], p[1], angle, radii[i], shrink_factor)
                 if not NoMansLand.collide({"x1": x1, "y1": y1, "x2": x2, "y2": y2}, "line"):
-                    d.append(draw.Line(x1*S, y1*S, x2*S, y2*S, 
-                        fill='none', stroke_width=LINE_WIDTH, 
+                    d.append(draw.Line(x1*S, y1*S, x2*S, y2*S,
+                        fill='none', stroke_width=LINE_WIDTH,
                         stroke=shape_color,stroke_linecap= "round", clip_path=bg))
 
         if SHOW_VOR:
@@ -315,8 +268,6 @@ def draw_card(card_type="perso-hard", card_face="dos",  text="Quel événement d
                     p2 = vor.vertices[reg_corners[corner]]
                     d.append(draw.Line(p1[0]*S, p1[1]*S, p2[0]*S, p2[1]*S,
                         stroke='red', stroke_width=0.5, fill='none'))
-            
     d.setPixelScale(1.5)  # Set number of pixels per geometry unit
 
     return d.asSvg()
-
