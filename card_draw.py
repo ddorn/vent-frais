@@ -275,7 +275,7 @@ def draw_card(
 
             else:
                 shape_color = rd.choice(COLOR_PALETTES[card_type]['lines'])
-                angle = np.random.uniform(0, 6.28)
+                angle = angles(p[0], p[1])
                 x1, y1, x2, y2 = getLine(p[0], p[1], angle, radii[i],
                                          shrink_factor)
                 if not NoMansLand.collide(
