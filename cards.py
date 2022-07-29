@@ -476,7 +476,6 @@ def edit_deck(deck: Path, shapefile = None):
 def gen_svg(deck, x, y, show, back, output):
     deck = Deck.load(deck)
     card = deck.at(x, y)
-    print(deck.shapes)
     svg = card.gen_svg(deck.shapes, not back)
     output.write(svg)
     if show:

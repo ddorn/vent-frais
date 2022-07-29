@@ -162,8 +162,11 @@ class ProtectedZones:
     is_face: bool
     line_rects: list[pygame.Rect]
     line_width: float
+    smooth: bool= False
+    smooth_by_size: bool=True
 
     RECT_INFLATION = 30 #TODO add smooth empty space
+    
 
     def collide(self, shape_dict, shape_type) -> bool:
         if shape_type == "circle":
@@ -177,10 +180,39 @@ class ProtectedZones:
                                     inflation).collidepoint(self.to_pygame(p)):
                         return True
                 return False
+                
             else:
-                return np.linalg.norm(self.logo_xy - p) <= (self.logo_radius +
-                                                            r)
+                if self.smooth:
+                    d = np.linalg.norm(self.logo_xy - p)
+                    if  d <= (self.logo_radius + r):
+                        return True
+                    elif d<= (self.logo_radius*2 + r):
+                        if np.random.random() > (d-self.logo_radius -\
+                                                 r)/(self.logo_radius):
+                            return True
+                        else:
+                            return False
+                    else:
+                        return False
 
+                elif self.smooth_by_size:
+                    d = np.linalg.norm(self.logo_xy - p)
+                    if  d <= (self.logo_radius + r):
+                        return 0.
+                    elif d<= (self.logo_radius*3 + r):
+                        red_factor = (d-self.logo_radius -\
+                                                 r)/(2*self.logo_radius)
+                        if red_factor >0.3:
+                            return red_factor*0.8 + 0.2
+                        else:
+                            return 0.
+                    else:
+                        return 1.
+
+                else:
+                    return np.linalg.norm(self.logo_xy - p) <= (self.logo_radius +
+                                                            r)
+                
         else:  # shape_type == "line":
             p1 = np.array([shape_dict["x1"], shape_dict["y1"]])
             p2 = np.array([shape_dict["x2"], shape_dict["y2"]])
@@ -192,8 +224,34 @@ class ProtectedZones:
                         return True
                 return False
             else:
-                return np.linalg.norm(self.logo_xy - p1) < self.logo_radius or \
-                   np.linalg.norm(self.logo_xy - p2) < self.logo_radius
+                if self.smooth:
+                    d = (np.linalg.norm(self.logo_xy - p1) + \
+                        np.linalg.norm(self.logo_xy - p2))*0.5
+                    if d < self.logo_radius:
+                        return True
+                    elif d< 2* self.logo_radius:
+                        if np.random.random() > (d-self.logo_radius)/(self.logo_radius):
+                            return True
+                        else:
+                            return False
+                    else:
+                        return False
+                elif self.smooth_by_size:
+                    d = (np.linalg.norm(self.logo_xy - p1) + \
+                        np.linalg.norm(self.logo_xy - p2))*0.5
+                    if d < self.logo_radius:
+                        return 0
+                    elif d< 3* self.logo_radius:
+                        red_factor = (d-self.logo_radius)/(2*self.logo_radius)
+                        if  red_factor > 0.3:
+                            return red_factor*0.8 + 0.2
+                        else:
+                            return 0.
+                    else:
+                        return 1.
+                else:
+                    return np.linalg.norm(self.logo_xy - p1) < self.logo_radius or \
+                    np.linalg.norm(self.logo_xy - p2) < self.logo_radius
 
     def to_pygame(self, point):
         return (point[0] * 500, 500 - point[1] * 500)
@@ -227,6 +285,8 @@ def draw_card(
     text_metrics: list[tuple[str, tuple[int, int], pygame.Rect]],
     is_face: bool = False,
 ):
+    np.random.seed(card_position[0]*10 + card_position[1])
+    rd.seed(card_position[0]*10 + card_position[1])
 
     # TODO seed the card
 
@@ -298,10 +358,8 @@ def draw_card(
         #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2,LOGO_W,LOGO_H, fill="white", style="opacity:0.5"))
 
-    for i, shape in enumerate(shapes):
-        
+    for i, shape in enumerate(shapes):        
         if is_in_square(shape, offset, 1, 1):
-            
 
             if shape["t"] == "c":  #if circle
                 cx = shape["cx"] - offset[0]
@@ -310,7 +368,8 @@ def draw_card(
                     cx = 1 - cx
 
                 shape_color = rd.choice(COLOR_PALETTES[card_type]['dots'])
-                if not NoMansLand.collide({
+                if not NoMansLand.smooth_by_size and \
+                    not NoMansLand.collide({
                         "cx": cx,
                         "cy": cy,
                         "r": shape["r"]
@@ -322,6 +381,21 @@ def draw_card(
                                     fill=shape_color,
                                     stroke='none',
                                     clip_path=bg))
+                elif NoMansLand.smooth_by_size:
+                    size_red = NoMansLand.collide({
+                                                    "cx": cx,
+                                                    "cy": cy,
+                                                    "r": shape["r"]
+                                                    }, "circle")
+                    if size_red > 0:
+                        d.append(
+                            draw.Circle(cx * S,
+                                        cy * S,
+                                        shape["r"] * S * shrink_factor* size_red,
+                                        fill=shape_color,
+                                        stroke='none',
+                                        clip_path=bg))
+
 
             elif shape["t"] == "l":
                 shape_color = rd.choice(COLOR_PALETTES[card_type]['lines'])
@@ -340,7 +414,7 @@ def draw_card(
                         "y1": y1,
                         "x2": x2,
                         "y2": y2
-                    }, "line"):
+                    }, "line") and not NoMansLand.smooth_by_size:
                     d.append(
                         draw.Line(x1 * S,
                                   y1 * S,
@@ -351,6 +425,30 @@ def draw_card(
                                   stroke=shape_color,
                                   stroke_linecap="round",
                                   clip_path=bg))
+                elif NoMansLand.smooth_by_size:
+                    size_red = NoMansLand.collide(
+                                                    {
+                                                        "x1": x1,
+                                                        "y1": y1,
+                                                        "x2": x2,
+                                                        "y2": y2
+                                                    }, "line")
+                    if size_red > 0:
+                        x1_red = (x1+x2)*0.5*(1-size_red) + size_red*x1
+                        x2_red = (x1+x2)*0.5*(1-size_red) + size_red*x2
+                        y1_red = (y1+y2)*0.5*(1-size_red) + size_red*y1
+                        y2_red = (y1+y2)*0.5*(1-size_red) + size_red*y2
+
+                        d.append(
+                            draw.Line(x1_red * S,
+                                    y1_red * S,
+                                    x2_red * S,
+                                    y2_red * S,
+                                    fill='none',
+                                    stroke_width=LINE_WIDTH* size_red,
+                                    stroke=shape_color,
+                                    stroke_linecap="round",
+                                    clip_path=bg))
             else:
                 raise ValueError("Undefined shape type.")
 
@@ -363,6 +461,7 @@ def generate_all_shapes(angles: Field2D = lambda x, y: 0,
                         intensity: Field2D = lambda x, y: 0,
                         square_side: int = 4) -> list[dict[str, float]]:
     np.random.seed(42)
+    rd.seed(42)
 
     pts, radii, vor = get_relaxed_points(intensity, square_side)
     shape_file = []
