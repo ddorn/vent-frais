@@ -103,7 +103,7 @@ class Question:
     position: tuple[int, int]
     category: Category
 
-    def gen_svg(self, wind: WindMap, is_face: bool = False):
+    def gen_svg(self, shapes, is_face: bool = False):
 
         def heatmap(f):
             v = [[f(x / 100, y / 100) for x in range(100)] for y in range(100)]
@@ -115,7 +115,7 @@ class Question:
         # plt.show()
 
         metrics = get_text_metrics(self.statement)
-        return draw_card(self.category, metrics, is_face, angle, speed)
+        return draw_card(self.category, shapes, self.position, metrics, is_face)
 
     def to_dict(self):
         return {
@@ -209,8 +209,8 @@ class WindMap:
 
     def __init__(self, wind: np.ndarray, scale: float = 1.0) -> None:
         self.scale = scale
-        u = gaussian_filter(wind[..., 0], 3)
-        v = gaussian_filter(wind[..., 1], 3)
+        u = gaussian_filter(wind[..., 0], WIND_BLUR)
+        v = gaussian_filter(wind[..., 1], WIND_BLUR)
         self.wind = np.stack((u, v), axis=-1)
 
     def gps_to_index(self, lat: float, lon: float) -> tuple[float, float]:
@@ -278,8 +278,13 @@ class WindMap:
         # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
         lat, lon = x * self.scale, y * self.scale
         x, y = self.gps_to_index(lat, lon)
-        u = self.bilinear_interpolation(self.wind[..., 0], x, y)
-        v = self.bilinear_interpolation(self.wind[..., 1], x, y)
+
+        try:
+            u = self.bilinear_interpolation(self.wind[..., 0], x, y)
+            v = self.bilinear_interpolation(self.wind[..., 1], x, y)
+        except IndexError:
+            return 0, 0
+
         return u, v
 
     def angle_at(self, x, y):
@@ -471,7 +476,7 @@ def edit_deck(deck: Path, shapefile = None):
 def gen_svg(deck, x, y, show, back, output):
     deck = Deck.load(deck)
     card = deck.at(x, y)
-    svg = card.gen_svg(deck.wind, not back)
+    svg = card.gen_svg(deck.shapes, not back)
     output.write(svg)
     if show:
         if output.name == '<stdout>':
@@ -483,9 +488,14 @@ def gen_svg(deck, x, y, show, back, output):
         os.system('firefox ' + p)
 
 
-@cli.command(name='plot')
+@cli.group('plot')
+def plot():
+    """Display various data."""
+    pass
+
+@plot.command('wind')
 @click.argument('wind_file', type=click.Path(exists=True), default=WIND_PATH)
-def plot(wind_file: str):
+def plot_wind(wind_file: str):
     wind = np.load(wind_file)
     x = wind[..., 0]
     y = wind[..., 1]
@@ -503,10 +513,99 @@ def plot(wind_file: str):
     plt.imshow(speed)
     plt.show()
 
+@plot.command('shapefile')
+@click.argument('shapefile', type=click.File())
+def plot_shapefile(shapefile):
+    shapes = json.load(shapefile)
 
-@cli.command()
+    minx = float('inf')
+    miny = minx
+    maxx = -minx
+    maxy = maxx
+    for shape in shapes:
+        # print(shape)
+        if 'r' in shape:
+            attrs = [('cx', 'cy')]
+        else:
+            attrs = ('x1', 'y1'), ('x2', 'y2')
+
+        for ax, ay in attrs:
+            minx = min(minx, shape[ax])
+            maxx = max(maxx, shape[ax])
+            miny = min(miny, shape[ay])
+            maxy = max(maxy, shape[ay])
+
+    print(f"{minx=} {maxx=} {miny=} {maxy=}")
+
+    W, H = 1920, 1080
+    def to_screen(*pos):
+        if len(pos) == 1:
+            pos = pos[0]
+
+        pos: pygame.Vector2
+        pos -= center
+        pos = pos.elementwise() / extent
+        pos = pos.elementwise() * W
+        pos += (W / 2, H / 2)
+
+        # rx = (x - minx) / (maxx - minx)
+        # ry = (y - miny) / (maxy - miny)
+        return pos
+
+    center = pygame.Vector2()
+    extent = max(maxx-minx, maxy-miny) / 10
+
+    screen = pygame.display.set_mode((W, H))
+
+    def redraw():
+        screen.fill('#01132C')
+        pygame.draw.line(screen, 'grey', to_screen(0, 100), to_screen(0, -100))
+        pygame.draw.line(screen, 'grey', to_screen(100, 0), to_screen(-100, 0))
+        pygame.draw.line(screen, 'grey', to_screen(1, 100), to_screen(1, -100))
+
+
+        for shape in shapes:
+            if 'r' in shape:
+                p =shape['cx'], shape['cy']
+                r = max(2, shape['r'] * SHRINK_FACTOR / extent * W)
+                pygame.draw.circle(screen, '#F86624', to_screen(p), int(r))
+            else:
+                p1 = shape['x1'], shape['y1']
+                p2 = shape['x2'], shape['y2']
+                w = max(1, 0.01 / extent * W)
+                pygame.draw.line(screen, '#CEE076', to_screen(p1), to_screen(p2), int(w))
+                if w > 2:
+                    pygame.draw.circle(screen, '#CEE076', to_screen(p1), int(w / 2) - 1)
+                    pygame.draw.circle(screen, '#CEE076', to_screen(p2), int(w / 2) - 1)
+
+    redraw()
+
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return
+            # quit on escape
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return
+                elif event.key == pygame.K_j:
+                    extent *= 1.5
+                    redraw()
+                elif event.key == pygame.K_k:
+                    extent /= 1.5
+                    redraw()
+            elif event.type == pygame.MOUSEWHEEL:
+                center.x += event.x * extent / 100
+                center.y += event.y * extent / 100
+                redraw()
+
+        pygame.time.wait(10)
+        pygame.display.flip()
+
+
+@plot.command('squares')
 @click.argument('radius', type=int, default=10)
-def squares(radius):
+def plot_squares(radius):
     board = get_board(radius)
 
     for y, row in enumerate(board):

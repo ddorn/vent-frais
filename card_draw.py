@@ -53,11 +53,13 @@ def random_weighted(cum_sums: list[float]) -> float:
 
 def gen_points(density: Callable[[float, float], float] = lambda x, y: 1,
                grid_size: int = 200,
-               w=1.0,
-               h=1.0):
+               rect: tuple[float, float, float, float]=(0, 0, 1, 1)):
+
+    t, l, w, h = rect
+
     line_weights: np.ndarray = np.array([
         cum_sum([
-            density(x * w / grid_size, y * h / grid_size)
+            density(l + w * x / grid_size, t + h * y / grid_size)
             for y in range(grid_size + 1)
         ]) for x in range(grid_size + 1)
     ])
@@ -70,7 +72,8 @@ def gen_points(density: Callable[[float, float], float] = lambda x, y: 1,
         y_weights = line_weights[int(x)] * (1 - p) + p * line_weights[int(x) +
                                                                       1]
         y = random_weighted(y_weights)
-        point = np.array([x * w, y * h]) / grid_size
+        point = np.array([l + w * x / grid_size, t + h * y / grid_size])
+        print(point)
         yield point
 
 
@@ -81,13 +84,13 @@ def get_centroid(cell):
 def get_relaxed_points(density, square_side):
 
     points = []
-    N = 800*square_side**2
+    N = 800*(2 * square_side)**2
     MAX_ITERATION = 5  #10
     rho = 0.5  #0
     SAMPLING_MARGIN = 0.2
     MAX_MOUV = 0.002
 
-    pts_gen = gen_points(density=density)
+    pts_gen = gen_points(density=density, rect=(-square_side, -square_side, 2*square_side, 2*square_side))
 
     for i in range(N):
         p = np.random.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN, 2)
@@ -219,7 +222,7 @@ def is_in_square(shape, offset, l, m):
 
 def draw_card(
     card_type: Category,
-    shape_file: list,
+    shapes: list,
     card_position: tuple,
     text_metrics: list[tuple[str, tuple[int, int], pygame.Rect]],
     is_face: bool = False,
@@ -295,7 +298,7 @@ def draw_card(
         #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2,LOGO_W,LOGO_H, fill="white", style="opacity:0.5"))
 
-    for i, shape in enumerate(shape_file):
+    for i, shape in enumerate(shapes):
         if is_in_square(shape, offset, 1, 1):
 
             if shape["t"] == "c":  #if circle
