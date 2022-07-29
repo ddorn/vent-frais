@@ -107,16 +107,16 @@ class Question:
         Field2D = Callable[[float, float], float]
 
         angle = lambda x, y: wind.angle_at(self.position[0] + x, self.position[1] + y)
-        speed = lambda x, y: wind.speed_at(self.position[0] + x, self.position[1] + y)
+        speed = lambda x, y: 20 + wind.speed_at(self.position[0] + x, self.position[1] + y)
 
         def heatmap(f):
             v = [[f(x / 100, y / 100) for x in range(100)] for y in range(100)]
             plt.imshow(v)
 
-        heatmap(angle)
-        plt.show()
-        heatmap(speed)
-        plt.show()
+        # heatmap(angle)
+        # plt.show()
+        # heatmap(speed)
+        # plt.show()
 
         metrics = get_text_metrics(self.statement)
         return draw_card(self.category, metrics, is_face, angle, speed)
@@ -295,14 +295,14 @@ class WindMap:
 
     def to_dict(self):
         return {
-            'wind': base64.b85encode(self.wind.tobytes()).decode('utf-8'),
+            'wind': self.wind.tolist(),
             'scale': self.scale,
         }
 
     @classmethod
     def from_dict(cls, d: dict):
         return cls(
-            np.frombuffer(base64.b85decode(d['wind'].encode('utf-8'))),
+            np.array(d['wind']),
             d['scale'],
         )
 

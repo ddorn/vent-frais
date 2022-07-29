@@ -1,5 +1,5 @@
 from __future__ import annotations
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from random import uniform
 from typing import Callable
 import random as rd
@@ -23,32 +23,50 @@ def cum_sum(l: list):
     ret = l[:]
     for i in range(1, len(l)):
         ret[i] += ret[i - 1]
-    return ret
+    return [0] + ret
 
 
-def gen_points(density):
-    W = 1
-    H = 1
-    GRID_SIZE = 0.002
+def random_weighted(cum_sums: list[float]) -> float:
+    r = uniform(0, cum_sums[-1])
+    x1 = bisect_right(cum_sums, r)
+    x0 = x1 - 1
+    # print(r, x0, len(cum_sums), cum_sums[-3:])
+    y0 = cum_sums[x0]
+    y1 = cum_sums[x1] if x0 != -1 else 0
 
-    line_weights = [
+    prop = (r - y0) / (y1 - y0)
+    # probability is prop to: pdf = (y0 + prop * (y1 - y0)) / area
+    area = (x1 - x0) * (y0 + y1) / 2
+    # cdf = lambda x: (x * y0 + x ** 2 * (y1 - y0) / 2) / area
+    # we want the x such that cdf(x) = prop
+    a = (y1 - y0) / 2 / area
+    b = y0 / area
+    c = -prop
+    # print('r x0 y0 y1', r, x0, y0, y1)
+    # print('a b c', a, b, c)
+    # we solve a*x**2 + b*x + c == 0
+    x = (-b + np.sqrt(b ** 2 - 4 * a * c)) / (2 * a)
+    # print('x', x)
+
+    return x0 + x
+
+def gen_points(density: Callable[[float, float], float] = lambda x, y: 1, grid_size: int = 200, w=1.0, h=1.0):
+    line_weights: np.ndarray = np.array([
         cum_sum([
-            density(x * GRID_SIZE, y * GRID_SIZE)
-            for y in range(int(H // GRID_SIZE))
-        ]) for x in range(int(W // GRID_SIZE))
-    ]
+            density(x * w / grid_size, y * h / grid_size)
+            for y in range(grid_size + 1)
+        ]) for x in range(grid_size + 1)
+    ])
 
-    col_weight = cum_sum(
-        [line_weights[x][-1] for x in range(int(W // GRID_SIZE))])
-    deja_vu = set()
+    col_weight = cum_sum([line_weights[x, -1] for x in range(grid_size)])
 
     while True:
-        r = uniform(0, col_weight[-1])
-        x = bisect_left(col_weight, r)
-        y = bisect_left(line_weights[x], uniform(0, line_weights[x][-1]))
-        if not ((x, y) in deja_vu):
-            yield (np.array([x, y]) * GRID_SIZE)
-            deja_vu.add((x, y))
+        x = random_weighted(col_weight)
+        p = x - int(x)
+        y_weights = line_weights[int(x)] * (1 - p) + p * line_weights[int(x) + 1]
+        y = random_weighted(y_weights)
+        point = np.array([x * w, y * h]) / grid_size
+        yield point
 
 
 def get_centroid(cell):
