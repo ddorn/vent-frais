@@ -35,7 +35,7 @@ class Category(enum.Enum):
             self.ABOUT_THE_WORLD: 'about-the-world',
             self.REGARD_SUR_LE_MONDE: 'view-about-the-world',
         }[self]
-        return f'logo/logo-{base}.svg'
+        return f'logo/logo-{base}-raw.svg'
 
 COLOR_PALETTES = {
     Category.PERSO_EASY: {"background": "#01132c", "dots" : ["#fed9b7", "#ffffff", "#f07167"], "lines" : ["#ffffff", "#00afb9", "#0081a7"]},
