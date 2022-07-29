@@ -176,18 +176,35 @@ class ProtectedZones:
 Field2D = Callable[[float, float], float]
 
 
+def is_in_square(shape, offset, l, m):
+    def is_point_in_square(x,y):
+        if x > offset[0]-m and x < offset[0]+l+m and \
+            y > offset[1]-m and y < offset[1]+l+m:
+            return True
+        else:
+            return False
+
+    if shape["t"] == "c":
+        return is_point_in_square(shape["cx"], shape["cy"])
+    elif shape["t"] == "l":
+        return is_point_in_square(shape["x1"], shape["y1"]) or \
+                is_point_in_square(shape["x2"], shape["y2"]) 
+    else:
+        raise ValueError("Undefined shape type.")
+
 def draw_card(
     card_type: Category,
+    shape_file: list,
+    card_position: tuple,
     text_metrics: list[tuple[str, tuple[int, int], pygame.Rect]],
     is_face: bool = False,
-    angles: Field2D = lambda x, y: 0,
-    intensity: Field2D = lambda x, y: 0,
 ):
 
     # TODO seed the card
 
     S = 500
     shrink_factor = 0.85
+    offset = (card_position[0], card_position[1]) #position of the bottom left corner
 
     NoMansLand = ProtectedZones(
         logo_xy=np.array([0.5, 0.5]),
@@ -251,31 +268,42 @@ def draw_card(
         #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2,LOGO_W,LOGO_H, fill="white", style="opacity:0.5"))
 
-    pts, radii, vor = get_relaxed_points(intensity)
 
-    for i, p in enumerate(pts):
-        if SHOW_DESIGN:
-            if np.random.random() < PROP_CIRCLE:
+    for i, shape in enumerate(shape_file):
+        if is_in_square(shape, offset, 2):
+
+            if shape["t"] == "c": #if circle
+                cx = shape["cx"] - offset[0]
+                cy = shape["cy"] - offset[1]
+                if is_face: ## flip the face
+                    cx = 1-cx
+
                 shape_color = rd.choice(COLOR_PALETTES[card_type]['dots'])
                 if not NoMansLand.collide(
                     {
-                        "cx": p[0],
-                        "cy": p[1],
-                        "r": radii[i]
+                        "cx": cx,
+                        "cy": cy,
+                        "r": shape["r"]
                     }, "circle"):
                     d.append(
-                        draw.Circle(p[0] * S,
-                                    p[1] * S,
-                                    radii[i] * S * shrink_factor,
+                        draw.Circle(cx* S,
+                                    cy * S,
+                                    shape["r"] * S * shrink_factor,
                                     fill=shape_color,
                                     stroke='none',
                                     clip_path=bg))
 
-            else:
+            elif shape["t"] == "l":
                 shape_color = rd.choice(COLOR_PALETTES[card_type]['lines'])
-                angle = angles(p[0], p[1])
-                x1, y1, x2, y2 = getLine(p[0], p[1], angle, radii[i],
-                                         shrink_factor)
+                x1 = shape["x1"] - offset[0]
+                y1 = shape["y1"] - offset[1]
+                x2 = shape["x2"] - offset[0]
+                y2 = shape["y2"] - offset[1]
+
+                if is_face: ## flip the face
+                    x1 = 1-x1
+                    x2 = 1-x2
+
                 if not NoMansLand.collide(
                     {
                         "x1": x1,
@@ -285,39 +313,52 @@ def draw_card(
                     }, "line"):
                     d.append(
                         draw.Line(x1 * S,
-                                  y1 * S,
-                                  x2 * S,
-                                  y2 * S,
-                                  fill='none',
-                                  stroke_width=LINE_WIDTH,
-                                  stroke=shape_color,
-                                  stroke_linecap="round",
-                                  clip_path=bg))
+                                y1 * S,
+                                x2 * S,
+                                y2 * S,
+                                fill='none',
+                                stroke_width=LINE_WIDTH,
+                                stroke=shape_color,
+                                stroke_linecap="round",
+                                clip_path=bg))
+            else:
+                raise ValueError("Undefined shape type.")
 
-        if SHOW_VOR:
-            #print(p, radii)
-
-            d.append(
-                draw.Circle(p[0] * S,
-                            p[1] * S,
-                            radii[i] * S,
-                            fill='none',
-                            stroke_width=0.5,
-                            stroke='blue'))
-            d.append(draw.Circle(p[0] * S, p[1] * S, 1., fill='black'))
-            reg_corners = vor.regions[vor.point_region[i]]
-            for corner in range(len(reg_corners)):
-                if reg_corners[corner - 1] != -1 and reg_corners[corner] != -1:
-                    p1 = vor.vertices[reg_corners[corner - 1]]
-                    p2 = vor.vertices[reg_corners[corner]]
-                    d.append(
-                        draw.Line(p1[0] * S,
-                                  p1[1] * S,
-                                  p2[0] * S,
-                                  p2[1] * S,
-                                  stroke='red',
-                                  stroke_width=0.5,
-                                  fill='none'))
     d.setPixelScale(1.5)  # Set number of pixels per geometry unit
 
     return d.asSvg()
+
+
+def generate_all_shapes(angles: Field2D = lambda x, y: 0,
+                        intensity: Field2D = lambda x, y: 0):
+    np.random.seed(42)
+
+    pts, radii, vor = get_relaxed_points(intensity)
+    shape_file = ""
+
+    for i, p in enumerate(pts):
+
+        if np.random.random() < PROP_CIRCLE:
+            shape_file.append(
+                        {
+                            "cx": p[0],
+                            "cy": p[1],
+                            "r": radii[i],
+                            "t":"c"
+                        })
+        else:
+
+            x1, y1, x2, y2 = getLine(p[0], p[1], angle, radii[i],
+                                        shrink_factor)
+            shape_file.append(
+                {
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                    "t":"l"
+                })
+
+    return shape_file
+
+
