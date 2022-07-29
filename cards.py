@@ -5,6 +5,7 @@ import base64
 
 import csv
 import enum
+from genericpath import isdir
 import json
 import os
 from platform import python_branch
@@ -472,21 +473,26 @@ def edit_deck(deck: Path, shapefile = None):
               '--back',
               is_flag=True,
               help='Generate the back of the card.')
-@click.option('-o', '--output', type=click.File('w'), default='-')
-def gen_svg(deck, x, y, show, back, output):
+@click.option('-o', '--output', type=click.Path(path_type=Path))
+def gen_svg(deck, x, y, show, back, output: Path=None):
     deck = Deck.load(deck)
     card = deck.at(x, y)
 
     svg = card.gen_svg(deck.shapes, not back)
-    output.write(svg)
+
+    side = 'back' if back else 'front'
+    default_name = f'card_{x}_{y}_{side}.svg'
+    if output is None:
+        output = Path('out') / default_name
+    elif output.is_dir():
+        output = output / default_name
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    output.write_text(svg)
+    click.secho(f'Saved to {output.absolute()}', fg='green')
+
     if show:
-        if output.name == '<stdout>':
-            p = Path(f'/tmp/vent-frais-card-{x}-{y}.svg')
-            p.write_text(svg)
-            p = str(p.absolute())
-        else:
-            p = output.name
-        os.system('firefox ' + p)
+        os.system('firefox ' + str(output))
 
 
 @cli.group('plot')
