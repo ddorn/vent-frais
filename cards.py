@@ -187,8 +187,8 @@ class Deck:
         ids = []
         radius = self.radius + 1
         board = get_board(radius)
-        for u in range(2 * radius + 1):
-            for v in range(2 * radius + 1):
+        for v in range(2 * radius + 1):
+            for u in range(2 * radius + 1):
                 q = by_pos.get((u - radius, v - radius), None)
                 if q is None:
                     print_square(board[u, v], '. ', True)
@@ -476,7 +476,7 @@ def edit_deck(deck: Path, shapefile = None):
 def gen_svg(deck, x, y, show, back, output):
     deck = Deck.load(deck)
     card = deck.at(x, y)
-    print(deck.shapes)
+
     svg = card.gen_svg(deck.shapes, not back)
     output.write(svg)
     if show:

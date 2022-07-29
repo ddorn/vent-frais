@@ -220,6 +220,14 @@ def is_in_square(shape, offset, l, m):
         raise ValueError("Undefined shape type.")
 
 
+def dist_to_rect(pos, rect: pygame.Rect):
+    nearest = (
+        np.clip(pos[0], rect.left, rect.right),
+        np.clip(pos[1], rect.top, rect.bottom)
+    )
+    return np.linalg.norm(pos - nearest)
+
+
 def draw_card(
     card_type: Category,
     shapes: list,
