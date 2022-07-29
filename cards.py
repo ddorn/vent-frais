@@ -21,7 +21,7 @@ os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 import pygame
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.ndimage.filters import gaussian_filter
+from scipy.ndimage import gaussian_filter
 
 from constants import *
 from card_draw import draw_card, generate_all_shapes
@@ -137,20 +137,20 @@ class Question:
 @dataclass
 class Deck:
     cards: list[Question]
-    wind: WindMap
+    shapes: list[dict[str, float]]
 
     @classmethod
     def load(cls, path: Path = DECK_PATH) -> Deck:
         d = json.loads(path.read_text())
         return cls(
             [Question.from_dict(q) for q in d['cards']],
-            WindMap.from_dict(d['wind']),
+            d.get('shapes', {}),
         )
 
     def to_json(self) -> str:
         s = json.dumps({
             'cards': [q.to_dict() for q in self.cards],
-            'wind': self.wind.to_dict(),
+            'shape_file': self.shapes,
         })
         return s
 
@@ -290,19 +290,6 @@ class WindMap:
         u, v = self.wind_at(x, y)
         return u ** 2 + v ** 2
 
-    def to_dict(self):
-        return {
-            'wind': self.wind.tolist(),
-            'scale': self.scale,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict):
-        return cls(
-            np.array(d['wind']),
-            d['scale'],
-        )
-
 
 _TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
 
@@ -401,16 +388,17 @@ def convert_gfs_data(file: str, out: str):
 
     return velocities
 
-@cli.command(name='gen')
+@cli.command(name='shapes')
 @click.argument('file', type=click.Path(exists=True))
 @click.argument('out', type=click.File('w'))
 @click.option('-s', '--scale', type=float, default=20.0)
 @click.option('-d', '--min-density', type=float, default=20.0)
-def generate_shapes(file, out, scale, min_density):
+@click.option('-S', '--size', type=int, default=4)
+def generate_shapes(file, out, scale, min_density, size):
     """Convert a wind .npy file into a shapefile."""
 
     wind = WindMap(np.load(file), scale)
-    shapes = generate_all_shapes(wind.angle_at, lambda x, y: min_density + wind.speed_at(x, y))
+    shapes = generate_all_shapes(wind.angle_at, lambda x, y: min_density + wind.speed_at(x, y), size)
 
     out.write(json.dumps(shapes))
 
@@ -459,12 +447,12 @@ def show_deck(deck: Path):
 
 @cli.command('edit')
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
-@click.option('-s', '--scale', type=int)
-def edit_deck(deck: Path, scale = None):
+@click.option('-s', '--shapefile', type=click.File())
+def edit_deck(deck: Path, shapefile = None):
     """Edit a deck."""
     the_deck = Deck.load(deck)
-    if scale is not None:
-        the_deck.wind.scale = scale
+    if shapefile is not None:
+        the_deck.shapes = json.load(shapefile)
     deck.write_text(the_deck.to_json())
 
 @cli.command('gen')

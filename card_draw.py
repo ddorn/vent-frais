@@ -355,10 +355,11 @@ def draw_card(
 
 
 def generate_all_shapes(angles: Field2D = lambda x, y: 0,
-                        intensity: Field2D = lambda x, y: 0):
+                        intensity: Field2D = lambda x, y: 0,
+                        square_side: int = 4) -> list[dict[str, float]]:
     np.random.seed(42)
 
-    pts, radii, vor = get_relaxed_points(intensity)
+    pts, radii, vor = get_relaxed_points(intensity, square_side)
     shape_file = []
 
     for i, p in enumerate(pts):
