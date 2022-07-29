@@ -239,7 +239,7 @@ def draw_card(
         #                     NoMansLand.logo_xy[1]*S-LOGO_H/2, LOGO_W, LOGO_H,embed=True,
         #                     path=f"logo/logo-{card_type}.svg"))
 
-        with open(f"logo/logo-{card_type}-raw.svg", "r") as f:
+        with open(card_type.logo_name, "r") as f:
             logo_svg = f.read()
         d.append(draw.Raw(logo_svg))
 
