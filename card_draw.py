@@ -87,7 +87,7 @@ def get_relaxed_points(density, square_side):
     SAMPLING_MARGIN = 0.2
     MAX_MOUV = 0.002
 
-    pts_gen = gen_points(density=density)
+    pts_gen = gen_points(density=density) #TODO it generates only in [0,1] change width and height
 
     for i in range(N):
         p = np.random.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN, 2)
@@ -309,7 +309,7 @@ def draw_card(
                         "cx": cx,
                         "cy": cy,
                         "r": shape["r"]
-                }, "circle"):
+                        }, "circle"):
                     d.append(
                         draw.Circle(cx * S,
                                     cy * S,
