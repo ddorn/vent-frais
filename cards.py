@@ -265,18 +265,21 @@ class WindMap:
             fy = p * (A1 + A2 * p2 + p6 * (A3 + A4 * p2)) - y
             dy = A1 + A23 * p2 + p6 * (A37 + A49 * p2)
             dp = fy / dy
-            if (np.abs(dp) < limit).all(): break
+            print('p', i, p, np.sin(p), np.sin(p) / M)
+            if (np.abs(dp) < limit): break
         long = M * x * dy / np.cos(p)
         lat = np.arcsin(np.sin(p) / M)
         return long, lat
 
     def angle_at(self, x, y):
-        lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        lat, lon = x, y
         x, y = self.gps_to_index(lat, lon)
         return self.bilinear_interpolation(self.angle, x, y)
 
     def speed_at(self, x, y):
-        lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
+        lat, lon = x, y
         x, y = self.gps_to_index(lat, lon)
         return self.bilinear_interpolation(self.speed, x, y)
 
