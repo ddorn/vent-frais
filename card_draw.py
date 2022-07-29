@@ -78,10 +78,10 @@ def get_centroid(cell):
     return np.array(Polygon(cell).centroid.coords)[0]
 
 
-def get_relaxed_points(density):
+def get_relaxed_points(density, square_side):
 
     points = []
-    N = 1000
+    N = 800*square_side**2
     MAX_ITERATION = 5  #10
     rho = 0.5  #0
     SAMPLING_MARGIN = 0.2
@@ -90,9 +90,9 @@ def get_relaxed_points(density):
     pts_gen = gen_points(density=density)
 
     for i in range(N):
-        p = np.random.uniform(-SAMPLING_MARGIN, 1 + SAMPLING_MARGIN, 2)
+        p = np.random.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN, 2)
 
-        if 0 < p[0] and p[0] < 1 and 0 < p[1] and p[1] < 1:
+        if -square_side < p[0] and p[0] < square_side and -square_side < p[1] and p[1] < square_side:
             points.append(next(pts_gen))
         else:
             points.append(p)
