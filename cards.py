@@ -512,10 +512,10 @@ def generate_pdf(deck, show, output, cache_dir: Path):
 
     the_deck = Deck.load(deck)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    length = len(the_deck.cards)
 
     # Make sure all svg and pdf are in cache
-    for card, is_face in tqdm(list(itertools.product(the_deck.cards, [True, False]))):
+    for card, is_face in tqdm(
+            list(itertools.product(the_deck.cards, [True, False]))):
         pdf_path = cache_dir / card.name(is_face, pdf=True)
         svg_path = cache_dir / card.name(is_face, pdf=False)
 
@@ -542,7 +542,7 @@ def generate_pdf(deck, show, output, cache_dir: Path):
 
     # Compute the positions of each cards
     margin = 0.5  # In centimeters
-    card_size = 10
+    card_size = 10.0
     page_width = 21
     page_height = 29.7
     positions = np.array([
@@ -551,6 +551,7 @@ def generate_pdf(deck, show, output, cache_dir: Path):
         (margin, page_height - margin - card_size),
         (margin + card_size, page_height - margin - card_size),
     ])
+
     # convert from cm to 1/72 inch (unit of pdfs)
     unit = 0.39370079 * 72
     positions *= unit
@@ -572,12 +573,11 @@ def generate_pdf(deck, show, output, cache_dir: Path):
             idx = i ^ 1  # horizontal flip
             verso.add_overlay(
                 back.pages[0],
-                pikepdf.Rectangle(*positions[idx], *positions[idx] + card_size))
+                pikepdf.Rectangle(*positions[idx],
+                                  *positions[idx] + card_size))
 
-    # save
     pdf.save(output)
 
-    # show
     if show:
         os.system('firefox ' + str(output))
 
