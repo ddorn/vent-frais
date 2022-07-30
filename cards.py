@@ -1,16 +1,10 @@
 #!/bin/env python3
 
 from __future__ import annotations
-import base64
+import itertools
 
-import csv
-import enum
-from genericpath import isdir
 import json
 import os
-from platform import python_branch
-from pydoc import describe
-from re import L
 from typing import Callable
 import click
 from dataclasses import dataclass
@@ -19,7 +13,9 @@ from pprint import pprint
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
+from tqdm import tqdm
 import pygame
+import pikepdf
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
@@ -104,6 +100,11 @@ class Question:
     position: tuple[int, int]
     category: Category
 
+    def name(self, is_front: bool, pdf: bool = False):
+        side = 'front' if is_front else 'back'
+        ext = 'pdf' if pdf else 'svg'
+        return f'card_{self.position[0]}_{self.position[1]}_{side}.{ext}'
+
     def gen_svg(self, shapes, is_face: bool = False):
 
         def heatmap(f):
@@ -116,7 +117,8 @@ class Question:
         # plt.show()
 
         metrics = get_text_metrics(self.statement)
-        return draw_card(self.category, shapes, self.position, metrics, is_face)
+        return draw_card(self.category, shapes, self.position, metrics,
+                         is_face)
 
     def to_dict(self):
         return {
@@ -274,7 +276,6 @@ class WindMap:
         lat = np.arcsin(np.sin(p) / M)
         return long, lat
 
-
     def wind_at(self, x, y) -> tuple[float, float]:
         # lat, lon = self.gps_from_equal_earth(x * self.scale, y * self.scale)
         lat, lon = x * self.scale, y * self.scale
@@ -294,7 +295,7 @@ class WindMap:
 
     def speed_at(self, x, y):
         u, v = self.wind_at(x, y)
-        return u ** 2 + v ** 2
+        return u**2 + v**2
 
 
 _TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
@@ -355,7 +356,6 @@ def get_text_metrics(
 #         ) for row in questions
 #     ]
 
-
 # ------------------------ #
 #  Command line interface  #
 # ------------------------ #
@@ -394,6 +394,7 @@ def convert_gfs_data(file: str, out: str):
 
     return velocities
 
+
 @cli.command(name='shapes')
 @click.argument('file', type=click.Path(exists=True))
 @click.argument('out', type=click.File('w'))
@@ -404,10 +405,10 @@ def generate_shapes(file, out, scale, min_density, size):
     """Convert a wind .npy file into a shapefile."""
 
     wind = WindMap(np.load(file), scale)
-    shapes = generate_all_shapes(wind.angle_at, lambda x, y: min_density + wind.speed_at(x, y), size)
+    shapes = generate_all_shapes(
+        wind.angle_at, lambda x, y: min_density + wind.speed_at(x, y), size)
 
     out.write(json.dumps(shapes))
-
 
 
 @cli.command('add')
@@ -454,12 +455,13 @@ def show_deck(deck: Path):
 @cli.command('edit')
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
 @click.option('-s', '--shapefile', type=click.File())
-def edit_deck(deck: Path, shapefile = None):
+def edit_deck(deck: Path, shapefile=None):
     """Edit a deck."""
     the_deck = Deck.load(deck)
     if shapefile is not None:
         the_deck.shapes = json.load(shapefile)
     deck.write_text(the_deck.to_json())
+
 
 @cli.command('gen')
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
@@ -474,17 +476,16 @@ def edit_deck(deck: Path, shapefile = None):
               is_flag=True,
               help='Generate the back of the card.')
 @click.option('-o', '--output', type=click.Path(path_type=Path))
-def gen_svg(deck, x, y, show, back, output: Path=None):
+def gen_svg(deck, x, y, show, back, output: Path = None):
     deck = Deck.load(deck)
     card = deck.at(x, y)
     svg = card.gen_svg(deck.shapes, not back)
 
-    side = 'back' if back else 'front'
-    default_name = f'card_{x}_{y}_{side}.svg'
     if output is None:
-        output = Path('out') / default_name
+        output = Path('out') / card.svg_name(not back)
     elif output.is_dir():
-        output = output / default_name
+        output = output / card.svg_name(not back)
+    assert output is not None  # for mypy
     output.parent.mkdir(parents=True, exist_ok=True)
 
     output.write_text(svg)
@@ -494,10 +495,98 @@ def gen_svg(deck, x, y, show, back, output: Path=None):
         os.system('firefox ' + str(output))
 
 
+@cli.command('pdf')
+@click.argument('deck', type=click.Path(exists=True, path_type=Path))
+@click.option('-s', '--show', is_flag=True, help='Open the pdf afterwards.')
+@click.option('-o',
+              '--output',
+              type=click.Path(allow_dash=False, dir_okay=False, writable=True),
+              default='output.pdf')
+@click.option('-C',
+              '--cache-dir',
+              type=click.Path(path_type=Path, file_okay=False),
+              default='out')
+# @click.option('-c', '--cards', type=list[str])
+def generate_pdf(deck, show, output, cache_dir: Path):
+    """Generate a PDF of the deck."""
+
+    the_deck = Deck.load(deck)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    length = len(the_deck.cards)
+
+    # Make sure all svg and pdf are in cache
+    for card, is_face in tqdm(list(itertools.product(the_deck.cards, [True, False]))):
+        pdf_path = cache_dir / card.name(is_face, pdf=True)
+        svg_path = cache_dir / card.name(is_face, pdf=False)
+
+        if not pdf_path.exists():
+            # Ensure svg exists
+            if not svg_path.exists():
+                # click.secho(f'{progress} Generating {svg_path}: {card.statement}')
+                svg = card.gen_svg(the_deck.shapes, is_face)
+                svg_path.write_text(svg)
+            else:
+                svg = svg_path.read_text()
+
+            # use inkscape to convert svg to pdf
+            # click.secho(f'{progress} Generating {pdf_path}: {card.statement}')
+            ret_code = os.system(
+                f'inkscape "{svg_path}" --export-filename "{pdf_path}" 2> /dev/null'
+            )
+            assert ret_code == 0
+        # else:  # pdf exists
+        #     click.secho(f'{progress} Using cached pdf {pdf_path}', fg='yellow')
+
+    # group cards four by four
+    pages = [the_deck.cards[i:i + 4] for i in range(0, len(the_deck.cards), 4)]
+
+    # Compute the positions of each cards
+    margin = 0.5  # In centimeters
+    card_size = 10
+    page_width = 21
+    page_height = 29.7
+    positions = np.array([
+        (margin, margin),
+        (margin + card_size, margin),
+        (margin, page_height - margin - card_size),
+        (margin + card_size, page_height - margin - card_size),
+    ])
+    # convert from cm to 1/72 inch (unit of pdfs)
+    unit = 0.39370079 * 72
+    positions *= unit
+    card_size *= unit
+
+    # create two new pages for each group
+    pdf = pikepdf.new()
+    for page in tqdm(pages):
+        recto = pdf.add_blank_page(page_size=(595, 842))  # A4
+        verso = pdf.add_blank_page(page_size=(595, 842))
+
+        for i, card in enumerate(page):
+            front = pikepdf.open(cache_dir / card.name(True, pdf=True))
+            recto.add_overlay(
+                front.pages[0],
+                pikepdf.Rectangle(*positions[i], *positions[i] + card_size))
+
+            back = pikepdf.open(cache_dir / card.name(False, pdf=True))
+            idx = i ^ 1  # horizontal flip
+            verso.add_overlay(
+                back.pages[0],
+                pikepdf.Rectangle(*positions[idx], *positions[idx] + card_size))
+
+    # save
+    pdf.save(output)
+
+    # show
+    if show:
+        os.system('firefox ' + str(output))
+
+
 @cli.group('plot')
 def plot():
     """Display various data."""
     pass
+
 
 @plot.command('wind')
 @click.argument('wind_file', type=click.Path(exists=True), default=WIND_PATH)
@@ -518,6 +607,7 @@ def plot_wind(wind_file: str):
     plt.subplot(2, 1, 2)
     plt.imshow(speed)
     plt.show()
+
 
 @plot.command('shapefile')
 @click.argument('shapefile', type=click.File())
@@ -544,6 +634,7 @@ def plot_shapefile(shapefile):
     print(f"{minx=} {maxx=} {miny=} {maxy=}")
 
     W, H = 1920, 1080
+
     def to_screen(*pos):
         if len(pos) == 1:
             pos = pos[0]
@@ -559,7 +650,7 @@ def plot_shapefile(shapefile):
         return pos
 
     center = pygame.Vector2()
-    extent = max(maxx-minx, maxy-miny) / 10
+    extent = max(maxx - minx, maxy - miny) / 10
 
     screen = pygame.display.set_mode((W, H))
 
@@ -569,20 +660,22 @@ def plot_shapefile(shapefile):
         pygame.draw.line(screen, 'grey', to_screen(100, 0), to_screen(-100, 0))
         pygame.draw.line(screen, 'grey', to_screen(1, 100), to_screen(1, -100))
 
-
         for shape in shapes:
             if 'r' in shape:
-                p =shape['cx'], shape['cy']
+                p = shape['cx'], shape['cy']
                 r = max(2, shape['r'] * SHRINK_FACTOR / extent * W)
                 pygame.draw.circle(screen, '#F86624', to_screen(p), int(r))
             else:
                 p1 = shape['x1'], shape['y1']
                 p2 = shape['x2'], shape['y2']
                 w = max(1, 0.01 / extent * W)
-                pygame.draw.line(screen, '#CEE076', to_screen(p1), to_screen(p2), int(w))
+                pygame.draw.line(screen, '#CEE076', to_screen(p1),
+                                 to_screen(p2), int(w))
                 if w > 2:
-                    pygame.draw.circle(screen, '#CEE076', to_screen(p1), int(w / 2) - 1)
-                    pygame.draw.circle(screen, '#CEE076', to_screen(p2), int(w / 2) - 1)
+                    pygame.draw.circle(screen, '#CEE076', to_screen(p1),
+                                       int(w / 2) - 1)
+                    pygame.draw.circle(screen, '#CEE076', to_screen(p2),
+                                       int(w / 2) - 1)
 
     redraw()
 

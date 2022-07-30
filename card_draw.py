@@ -93,7 +93,7 @@ def get_relaxed_points(density, square_side):
     pts_gen = gen_points(density=density, rect=(-square_side, -square_side, 2*square_side, 2*square_side))
 
     for i in range(N):
-        p = np.random.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN, 2)
+        p = rd.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN, 2)
 
         if -square_side < p[0] and p[0] < square_side and -square_side < p[1] and p[1] < square_side:
             points.append(next(pts_gen))
@@ -166,7 +166,7 @@ class ProtectedZones:
     smooth_by_size: bool=True
 
     RECT_INFLATION = 30 #TODO add smooth empty space
-    
+
 
     def compute_red_factor(self,d):
         if d < 0:
@@ -190,7 +190,7 @@ class ProtectedZones:
                     red_size = 1.
                     for rect in self.line_rects:
                         d = dist_to_rect(self.to_pygame(p), rect) + TEXT_GRADIENT_DEADZONE
-                        
+
                         red_size = min(red_size, self.compute_red_factor(d/500))
                     return red_size
                 else:
@@ -206,7 +206,7 @@ class ProtectedZones:
                     if  d <= (self.logo_radius + r):
                         return True
                     elif d<= (self.logo_radius*2 + r):
-                        if np.random.random() > (d-self.logo_radius -\
+                        if rd.random() > (d-self.logo_radius -\
                                                  r)/(self.logo_radius):
                             return True
                         else:
@@ -222,7 +222,7 @@ class ProtectedZones:
                 else:
                     return np.linalg.norm(self.logo_xy - p) <= (self.logo_radius +
                                                             r)
-                
+
         else:  # shape_type == "line":
             p1 = np.array([shape_dict["x1"], shape_dict["y1"]])
             p2 = np.array([shape_dict["x2"], shape_dict["y2"]])
@@ -232,7 +232,7 @@ class ProtectedZones:
                     red_size = 1.
                     inflation = self.RECT_INFLATION + self.line_width
                     mid_point = (self.to_pygame(p1) + self.to_pygame(p2))/2
-                    
+
                     for rect in self.line_rects:
                         d = dist_to_rect(mid_point, rect) + TEXT_GRADIENT_DEADZONE
                         red_size = min(red_size, self.compute_red_factor(d/500))
@@ -248,11 +248,11 @@ class ProtectedZones:
             else:
                 if self.smooth:
                     d = (np.linalg.norm(self.logo_xy - p1) + \
-                        np.linalg.norm(self.logo_xy - p2))*0.5 
+                        np.linalg.norm(self.logo_xy - p2))*0.5
                     if d < self.logo_radius:
                         return True
                     elif d< 2* self.logo_radius:
-                        if np.random.random() > (d-self.logo_radius)/(self.logo_radius):
+                        if rd.random() > (d-self.logo_radius)/(self.logo_radius):
                             return True
                         else:
                             return False
@@ -307,8 +307,7 @@ def draw_card(
     text_metrics: list[tuple[str, tuple[int, int], pygame.Rect]],
     is_face: bool = False,
 ):
-    np.random.seed(card_position[0]*10 + card_position[1])
-    rd.seed(card_position[0]*10 + card_position[1])
+    rd.seed(str(card_position))
 
     # TODO seed the card
 
@@ -380,7 +379,7 @@ def draw_card(
         #d.append(draw.Rectangle(NoMansLand.LOGO_XY[0]*S-LOGO_W/2,
         #                    NoMansLand.LOGO_XY[1]*S-LOGO_H/2,LOGO_W,LOGO_H, fill="white", style="opacity:0.5"))
 
-    for i, shape in enumerate(shapes):        
+    for i, shape in enumerate(shapes):
         if is_in_square(shape, offset, 1, 1):
 
             if shape["t"] == "c":  #if circle
@@ -482,7 +481,6 @@ def draw_card(
 def generate_all_shapes(angles: Field2D = lambda x, y: 0,
                         intensity: Field2D = lambda x, y: 0,
                         square_side: int = 4) -> list[dict[str, float]]:
-    np.random.seed(42)
     rd.seed(42)
 
     pts, radii, vor = get_relaxed_points(intensity, square_side)
@@ -490,7 +488,7 @@ def generate_all_shapes(angles: Field2D = lambda x, y: 0,
 
     for i, p in enumerate(pts):
 
-        if np.random.random() < PROP_CIRCLE:
+        if rd.random() < PROP_CIRCLE:
             shape_file.append({
                 "cx": p[0],
                 "cy": p[1],
