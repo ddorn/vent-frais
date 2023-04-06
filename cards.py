@@ -1,6 +1,7 @@
 #!/bin/env python3
 
 from __future__ import annotations
+import csv
 import itertools
 
 import json
@@ -453,6 +454,31 @@ def new_card(category, prompt, deck_path):
     deck_path.parent.mkdir(parents=True, exist_ok=True)
     deck_path.write_text(deck.to_json())
 
+@cli.command('add-csv')
+@click.argument('csv-file', type=click.File())
+@click.option('-h', '--has-header', is_flag=True)
+@click.option('-q', '--question-col', type=int, default=0)
+@click.option('-c', '--category-col', type=int, default=1)
+@click.option('-d',
+                '--deck-path',
+                type=click.Path(exists=True, path_type=Path),
+                default=DECK_PATH)
+def new_card_from_csv(csv_file, deck_path, has_header, question_col, category_col):
+    """Add all the cards from a csv file to the deck."""
+
+    deck = Deck.load(deck_path)
+    reader = csv.reader(csv_file)
+    if has_header:
+        next(reader)
+    for row in reader:
+        cat = row[category_col].upper().replace(' ', '_').replace('-_', '')
+        try:
+            cat = Category[cat]
+        except KeyError:
+            raise ValueError(f'Unknown category {cat}. Valid categories are: {list(Category.__members__.keys())}')
+        deck.new_card(cat, row[question_col])
+    deck_path.write_text(deck.to_json())
+
 
 @cli.command('new')
 # @click.argument('wind',
@@ -593,7 +619,9 @@ def generate_pdf(deck, show, output, cache_dir: Path):
     positions *= unit
     card_size *= unit
     page_width *= unit
+    page_width = 595  # exact size of A4 (askip)
     page_height *= unit
+    page_height = 842
     print("Page size:", page_width, page_height)
 
     # create two new pages for each group

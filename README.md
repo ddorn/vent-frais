@@ -36,6 +36,12 @@ Commands:
 ## Types of files
 
 - `grib2` files are the raw data files from the GFS model, which can then be converted to windfiles using `cards.py convert`.
+    Forcasts can be found at
+    https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl.
+    One needs to select:
+     - the file ending in f000,
+     - The desired level (eg. 10 m above ground)
+     - The variables UGRD and VGRD
 - `windfile`s are numpy arrays of shape `(lat, lon, 2)` which contain the wind velocity at each point of the grid.
     They can be converted to shapefiles using `cards.py shapes`.
 - `shapefile`s are json files which contain a single list of shapes. Shapes are
