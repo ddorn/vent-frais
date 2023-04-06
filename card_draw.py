@@ -93,7 +93,9 @@ def get_relaxed_points(density, square_side):
     pts_gen = gen_points(density=density, rect=(-square_side, -square_side, 2*square_side, 2*square_side))
 
     for i in range(N):
-        p = rd.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN, 2)
+        x = rd.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN)
+        y = rd.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN)
+        p = np.array([x, y])
 
         if -square_side < p[0] and p[0] < square_side and -square_side < p[1] and p[1] < square_side:
             points.append(next(pts_gen))
