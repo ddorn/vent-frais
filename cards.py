@@ -5,7 +5,7 @@ import itertools
 
 import json
 import os
-from typing import Callable
+from typing import Callable, Iterator, Optional
 import click
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +27,7 @@ COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100],
           [40, 67, 120]]
 
 
-def thue_gen():
+def thue_gen() -> Iterator[int]:
     n = 0
     while True:
         n += 1
@@ -35,6 +35,20 @@ def thue_gen():
 
 
 def thue_morse_random(bound):
+    """Generate deterministic random-like numbers in [0, bound[ using the Thue-Morse sequence.
+
+    The new bound must be sent every time to the generator in order to optain a new random number.
+
+    Yields:
+        int: A random number in [0, bound[
+    Send:
+        int: The new bound
+    Usage:
+        t = thue_morse_random(4)
+        next(t)  # Skip the first yield
+        for i in range(5, 10):
+            print(t.send(i))
+    """
     t = thue_gen()
 
     yield
@@ -57,6 +71,14 @@ def iterate_in_squares(bound=-1):
 
 
 def print_square(color: int, txt='', fg=False):
+    """Print a colored square with a text of at most two characters in it.
+
+    Args:
+        color (int): the index of the color in COLORS
+        txt (str, optional): text two show (truncated to the first 2 chars). Defaults to ''.
+        fg (bool, optional): Whether the color is in the forground or background. Defaults to False.
+    """
+
     r, g, b = COLORS[int(color)]
     txt = (str(txt) + '  ')[:2]
     code = 38 if fg else 48
@@ -207,6 +229,9 @@ class Deck:
             p = f' ({x},{y}):\t'
             print(p + q.statement)
 
+        if not ids:
+            print('No cards in deck.')
+
 
 class WindMap:
 
@@ -298,7 +323,7 @@ class WindMap:
         return u**2 + v**2
 
 
-_TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
+_TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
 
 
 def get_text_metrics(
@@ -376,6 +401,8 @@ def convert_gfs_data(file: str, out: str):
     """
     Convert GFS forcasts into numpy arrays with wind velocities.
 
+    Outputs a numpy array with shape (lat, lon, 2) and saves it.
+
     Forcasts can be found here:
     https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl
     One needs to select:
@@ -428,26 +455,25 @@ def new_card(category, prompt, deck_path):
 
 
 @cli.command('new')
-@click.argument('wind',
-                type=click.Path(exists=True, path_type=Path),
-                default=WIND_PATH)
-@click.option('-s', '--scale', type=click.FLOAT, default=1)
+# @click.argument('wind',
+#                 type=click.Path(exists=True, path_type=Path),
+#                 default=WIND_PATH)
+@click.argument('shapefile', type=click.File())
+# @click.option('-s', '--scale', type=click.FLOAT, default=1)
 @click.option('-o', '--output', type=click.File('w'), default='-')
-def new_deck(wind, scale, output):
-    """
-    Create a new deck.
-    """
+def new_deck(shapefile, output):
+    """Create a new deck."""
 
-    deck = Deck([], WindMap(np.load(wind), scale=scale))
+    shapes = json.load(shapefile)
+
+    deck = Deck([], shapes)
     output.write(deck.to_json())
 
 
 @cli.command('show')
 @click.argument('deck', type=click.Path(exists=True, path_type=Path))
 def show_deck(deck: Path):
-    """
-    Show a deck.
-    """
+    """Show a deck."""
     the_deck = Deck.load(deck)
     the_deck.show()
 
@@ -476,7 +502,8 @@ def edit_deck(deck: Path, shapefile=None):
               is_flag=True,
               help='Generate the back of the card.')
 @click.option('-o', '--output', type=click.Path(path_type=Path))
-def gen_svg(deck, x, y, show, back, output: Path = None):
+def gen_svg(deck, x, y, show, back, output: Optional[Path] = None):
+    """Generate a sigle svg of a card at position X, Y in DECK."""
     deck = Deck.load(deck)
     card = deck.at(x, y)
     svg = card.gen_svg(deck.shapes, not back)
@@ -542,20 +569,32 @@ def generate_pdf(deck, show, output, cache_dir: Path):
 
     # Compute the positions of each cards
     margin = 0.5  # In centimeters
-    card_size = 10.0
-    page_width = 21
+    card_size = 7.0
+    page_width = 21.0
     page_height = 29.7
-    positions = np.array([
-        (margin, margin),
-        (margin + card_size, margin),
-        (margin, page_height - margin - card_size),
-        (margin + card_size, page_height - margin - card_size),
-    ])
+    nb_cards_per_row = int((page_width - 2 * margin) // card_size)
+    nb_cards_per_col = int((page_height - 2 * margin) // card_size)
+    positions = np.empty((0, 2))
+    for x in range(nb_cards_per_row):
+        for y in range(nb_cards_per_col):
+            pos = (x * card_size + margin, y * card_size + margin)
+            positions = np.append(positions, [pos], axis=0)
+
+    print(positions)
+    # positions = np.array([
+    #     (margin, margin),
+    #     (margin + card_size, margin),
+    #     (margin, page_height - margin - card_size),
+    #     (margin + card_size, page_height - margin - card_size),
+    # ])
 
     # convert from cm to 1/72 inch (unit of pdfs)
     unit = 0.39370079 * 72
     positions *= unit
     card_size *= unit
+    page_width *= unit
+    page_height *= unit
+    print("Page size:", page_width, page_height)
 
     # create two new pages for each group
     pdf = pikepdf.new()
@@ -570,11 +609,15 @@ def generate_pdf(deck, show, output, cache_dir: Path):
                 pikepdf.Rectangle(*positions[i], *positions[i] + card_size))
 
             back = pikepdf.open(cache_dir / card.name(False, pdf=True))
-            idx = i ^ 1  # horizontal flip
+            # idx = i ^ 1  # horizontal flip (when using the layout with 1 card in each angle)
+            p = [page_width - margin - card_size, margin]
             verso.add_overlay(
                 back.pages[0],
-                pikepdf.Rectangle(*positions[idx],
-                                  *positions[idx] + card_size))
+                pikepdf.Rectangle(page_width - positions[i][0] - card_size,
+                                  positions[i][1],
+                                  page_width - positions[i][0],
+                                  positions[i][1] + card_size))
+
 
     pdf.save(output)
 
@@ -713,7 +756,7 @@ def plot_squares(radius):
         print('\033[0m')
 
 
-@cli.command()
+@plot.command()
 @click.argument('text', type=click.STRING, default=_TEXT)
 def text_test(text):
     W = 500
