@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import csv
+import os
 import itertools
 
 import json
@@ -14,6 +15,7 @@ from pprint import pprint
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
+import joblib
 from tqdm import tqdm
 import pygame
 import pikepdf
@@ -579,44 +581,52 @@ def gen_svg(deck, x, y, show, back, output: Optional[Path] = None):
               default='out')
 @click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing pdfs/svg in cache.')
 @click.option('--a4/--no-a4', default=True, help='Generate A4 pages.')
-def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool):
+@click.option('-j', '--jobs', "n_jobs", type=int, default=-1)
+def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool, n_jobs: int):
     """Generate a PDF of the deck."""
 
     the_deck = Deck.load(deck)
     cache_dir.mkdir(parents=True, exist_ok=True)
-    pdf_paths = []
+    pdf_paths = {(is_face, card): cache_dir / card.name(is_face, pdf=True)
+                 for card in the_deck.cards
+                 for is_face in [True, False]}
 
-    
+    def generate_one(card, is_face):
+        pdf_path = pdf_paths[(is_face, card)]
+        svg_path = pdf_path.with_suffix('.svg')
+
+        if pdf_path.exists() and not overwrite:
+            return
+
+        # Ensure svg exists
+        if svg_path.exists() and not overwrite:
+            svg = svg_path.read_text()
+        else:
+            svg = card.gen_svg(the_deck.shapes, is_face)
+            svg_path.write_text(svg)
+
+        # use inkscape to convert svg to pdf
+        # click.secho(f'{progress} Generating {pdf_path}: {card.statement}')
+        ret_code = os.system(
+            f'inkscape "{svg_path}" --export-filename "{pdf_path}" 2> /dev/null'
+            )
+        assert ret_code == 0
 
     # Make sure all svg and pdf are in cache
-    for card, is_face in tqdm(
-            list(itertools.product(the_deck.cards, [True, False])),
-            desc='Generating svg+pdfs'):
-        pdf_path = cache_dir / card.name(is_face, pdf=True)
-        svg_path = cache_dir / card.name(is_face, pdf=False)
-        pdf_paths.append(pdf_path)
+    need_to_generate = [key for key, path in pdf_paths.items() if not path.exists() or overwrite]
+    if not need_to_generate:
+        click.secho('All pdfs are in cache.', fg='green')
+    else:
+        click.secho(f'{len(pdf_paths) - len(need_to_generate)} pdfs are in cache.', fg='green')
+        joblib.Parallel(n_jobs=n_jobs)(
+            joblib.delayed(generate_one)(card, is_face)
+            for card, is_face in tqdm(need_to_generate, desc='Generating svg+pdfs')
+        )
 
-        if overwrite or not pdf_path.exists():
-            # Ensure svg exists
-            if overwrite or not svg_path.exists():
-                # click.secho(f'{progress} Generating {svg_path}: {card.statement}')
-                svg = card.gen_svg(the_deck.shapes, is_face)
-                svg_path.write_text(svg)
-            else:
-                svg = svg_path.read_text()
-
-            # use inkscape to convert svg to pdf
-            # click.secho(f'{progress} Generating {pdf_path}: {card.statement}')
-            ret_code = os.system(
-                f'inkscape "{svg_path}" --export-filename "{pdf_path}" 2> /dev/null'
-            )
-            assert ret_code == 0
-        # else:  # pdf exists
-        #     click.secho(f'{progress} Using cached pdf {pdf_path}', fg='yellow')
-
+    # Merge all pdfs into one
     if not a4:
-        cmd = f'pdftk {" ".join(map(str, pdf_paths))} cat output {output} verbose'
-        click.secho(cmd, fg='yellow')
+        cmd = f'pdftk {" ".join(map(str, pdf_paths.values()))} cat output {output} verbose'
+        click.secho("$ " + cmd, fg='yellow')
         ret = os.system(cmd)
         assert ret == 0, f'pdftk failed with code {ret}'
     else:
