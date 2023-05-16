@@ -1,30 +1,27 @@
 #!/bin/env python3
 
 from __future__ import annotations
-import csv
-import os
-import itertools
 
+import csv
 import json
 import os
-from typing import Callable, Iterator, Optional
-import click
 from dataclasses import dataclass
 from pathlib import Path
-from pprint import pprint
+from typing import Iterator, Optional
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
+import click
 import joblib
-from tqdm import tqdm
-import pygame
-import pikepdf
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+import pikepdf
+import pygame
 from scipy.ndimage import gaussian_filter
+from tqdm import tqdm
 
-from constants import *
 from card_draw import draw_card, generate_all_shapes
+from constants import *
 
 COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100],
           [40, 67, 120]]
@@ -430,7 +427,11 @@ def convert_gfs_data(file: str, out: str):
 @click.argument('out', type=click.File('w'))
 @click.option('-s', '--scale', type=float, default=20.0)
 @click.option('-d', '--min-density', type=float, default=20.0)
-@click.option('-S', '--size', type=int, default=4, help='Generates shapes in [-size, size]^2')
+@click.option('-S',
+              '--size',
+              type=int,
+              default=4,
+              help='Generates shapes in [-size, size]^2')
 def generate_shapes(file, out, scale, min_density, size):
     """Convert a wind .npy file into a shapefile."""
 
@@ -456,17 +457,26 @@ def new_card(category, prompt, deck_path):
     deck_path.parent.mkdir(parents=True, exist_ok=True)
     deck_path.write_text(deck.to_json())
 
+
 @cli.command('add-csv')
 @click.argument('csv-file', type=click.File())
 @click.option('-h', '--has-header', is_flag=True)
 @click.option('-q', '--question-col', type=int, default=0)
 @click.option('-c', '--category-col', type=int, default=1)
-@click.option('-C', '--category-map', type=str, default=None, help='Name of the categories. Fmt: name-perso-easy;name-perso-hard;name-word;name-monde')
+@click.option(
+    '-C',
+    '--category-map',
+    type=str,
+    default=None,
+    help=
+    'Name of the categories. Fmt: name-perso-easy;name-perso-hard;name-word;name-vision'
+)
 @click.option('-d',
-                '--deck-path',
-                type=click.Path(exists=True, path_type=Path),
-                default=DECK_PATH)
-def new_card_from_csv(csv_file, deck_path, has_header, question_col, category_col, category_map):
+              '--deck-path',
+              type=click.Path(exists=True, path_type=Path),
+              default=DECK_PATH)
+def new_card_from_csv(csv_file, deck_path, has_header, question_col,
+                      category_col, category_map):
     """Add all the cards from a csv file to the deck."""
 
     deck = Deck.load(deck_path)
@@ -481,15 +491,20 @@ def new_card_from_csv(csv_file, deck_path, has_header, question_col, category_co
             for cat, enum_member in zip(category_map, Category):
                 if name == cat:
                     return enum_member
-            raise ValueError(f'Unknown category {name}. Valid categories are: {category_map}')
+            raise ValueError(
+                f'Unknown category {name}. Valid categories are: {category_map}'
+            )
     else:
+
         def get_cat(name):
             """Get the category from the name according to the map."""
             cat = row[category_col].upper().replace(' ', '_').replace('-_', '')
             try:
                 return Category[name]
             except KeyError:
-                raise ValueError(f'Unknown category {cat}. Valid categories are: {list(Category.__members__.keys())}') from None
+                raise ValueError(
+                    f'Unknown category {cat}. Valid categories are: {list(Category.__members__.keys())}'
+                ) from None
 
     if has_header:
         next(reader)
@@ -579,17 +594,19 @@ def gen_svg(deck, x, y, show, back, output: Optional[Path] = None):
               '--cache-dir',
               type=click.Path(path_type=Path, file_okay=False),
               default='out')
-@click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing pdfs/svg in cache.')
+@click.option('--overwrite/--no-overwrite',
+              default=False,
+              help='Overwrite existing pdfs/svg in cache.')
 @click.option('--a4/--no-a4', default=True, help='Generate A4 pages.')
 @click.option('-j', '--jobs', "n_jobs", type=int, default=-1)
-def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool, n_jobs: int):
+def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
+                 a4: bool, n_jobs: int):
     """Generate a PDF of the deck."""
 
     the_deck = Deck.load(deck)
     cache_dir.mkdir(parents=True, exist_ok=True)
     pdf_paths = {(is_face, card): cache_dir / card.name(is_face, pdf=True)
-                 for card in the_deck.cards
-                 for is_face in [True, False]}
+                 for card in the_deck.cards for is_face in [True, False]}
 
     def generate_one(card, is_face):
         pdf_path = pdf_paths[(is_face, card)]
@@ -609,19 +626,24 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool,
         # click.secho(f'{progress} Generating {pdf_path}: {card.statement}')
         ret_code = os.system(
             f'inkscape "{svg_path}" --export-filename "{pdf_path}" 2> /dev/null'
-            )
+        )
         assert ret_code == 0
 
     # Make sure all svg and pdf are in cache
-    need_to_generate = [key for key, path in pdf_paths.items() if not path.exists() or overwrite]
+    need_to_generate = [
+        key for key, path in pdf_paths.items()
+        if not path.exists() or overwrite
+    ]
     if not need_to_generate:
         click.secho('All pdfs are in cache.', fg='green')
     else:
-        click.secho(f'{len(pdf_paths) - len(need_to_generate)} pdfs are in cache.', fg='green')
+        click.secho(
+            f'{len(pdf_paths) - len(need_to_generate)} pdfs are in cache.',
+            fg='green')
         joblib.Parallel(n_jobs=n_jobs)(
             joblib.delayed(generate_one)(card, is_face)
-            for card, is_face in tqdm(need_to_generate, desc='Generating svg+pdfs')
-        )
+            for card, is_face in tqdm(need_to_generate,
+                                      desc='Generating svg+pdfs'))
 
     # Merge all pdfs into one
     if not a4:
@@ -645,7 +667,10 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool,
 
         # group cards per page
         per_page = nb_cards_per_row * nb_cards_per_col
-        pages = [the_deck.cards[i:i + per_page] for i in range(0, len(the_deck.cards), per_page)]
+        pages = [
+            the_deck.cards[i:i + per_page]
+            for i in range(0, len(the_deck.cards), per_page)
+        ]
 
         # positions = np.array([
         #     (margin, margin),
@@ -673,7 +698,8 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool,
                 front = pikepdf.open(cache_dir / card.name(True, pdf=True))
                 recto.add_overlay(
                     front.pages[0],
-                    pikepdf.Rectangle(*positions[i], *positions[i] + card_size))
+                    pikepdf.Rectangle(*positions[i],
+                                      *positions[i] + card_size))
 
                 back = pikepdf.open(cache_dir / card.name(False, pdf=True))
                 # idx = i ^ 1  # horizontal flip (when using the layout with 1 card in each angle)
@@ -681,9 +707,9 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool,
                 verso.add_overlay(
                     back.pages[0],
                     pikepdf.Rectangle(page_width - positions[i][0] - card_size,
-                                    positions[i][1],
-                                    page_width - positions[i][0],
-                                    positions[i][1] + card_size))
+                                      positions[i][1],
+                                      page_width - positions[i][0],
+                                      positions[i][1] + card_size))
         pdf.save(output)
 
     if show:
