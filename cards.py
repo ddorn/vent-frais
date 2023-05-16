@@ -321,7 +321,7 @@ class WindMap:
 
     def speed_at(self, x, y):
         u, v = self.wind_at(x, y)
-        return u**2 + v**2
+        return np.sqrt(u**2 + v**2)
 
 
 _TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
@@ -577,22 +577,28 @@ def gen_svg(deck, x, y, show, back, output: Optional[Path] = None):
               '--cache-dir',
               type=click.Path(path_type=Path, file_okay=False),
               default='out')
-# @click.option('-c', '--cards', type=list[str])
-def generate_pdf(deck, show, output, cache_dir: Path):
+@click.option('--overwrite/--no-overwrite', default=False, help='Overwrite existing pdfs/svg in cache.')
+@click.option('--a4/--no-a4', default=True, help='Generate A4 pages.')
+def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool, a4: bool):
     """Generate a PDF of the deck."""
 
     the_deck = Deck.load(deck)
     cache_dir.mkdir(parents=True, exist_ok=True)
+    pdf_paths = []
+
+    
 
     # Make sure all svg and pdf are in cache
     for card, is_face in tqdm(
-            list(itertools.product(the_deck.cards, [True, False]))):
+            list(itertools.product(the_deck.cards, [True, False])),
+            desc='Generating svg+pdfs'):
         pdf_path = cache_dir / card.name(is_face, pdf=True)
         svg_path = cache_dir / card.name(is_face, pdf=False)
+        pdf_paths.append(pdf_path)
 
-        if not pdf_path.exists():
+        if overwrite or not pdf_path.exists():
             # Ensure svg exists
-            if not svg_path.exists():
+            if overwrite or not svg_path.exists():
                 # click.secho(f'{progress} Generating {svg_path}: {card.statement}')
                 svg = card.gen_svg(the_deck.shapes, is_face)
                 svg_path.write_text(svg)
@@ -608,63 +614,67 @@ def generate_pdf(deck, show, output, cache_dir: Path):
         # else:  # pdf exists
         #     click.secho(f'{progress} Using cached pdf {pdf_path}', fg='yellow')
 
-    # Compute the positions of each cards
-    margin = 0.5  # In centimeters
-    card_size = 7.0
-    page_width = 21.0
-    page_height = 29.7
-    nb_cards_per_row = int((page_width - 2 * margin) // card_size)
-    nb_cards_per_col = int((page_height - 2 * margin) // card_size)
-    positions = np.empty((0, 2))
-    for x in range(nb_cards_per_row):
-        for y in range(nb_cards_per_col):
-            pos = (x * card_size + margin, y * card_size + margin)
-            positions = np.append(positions, [pos], axis=0)
+    if not a4:
+        cmd = f'pdftk {" ".join(map(str, pdf_paths))} cat output {output} verbose'
+        click.secho(cmd, fg='yellow')
+        ret = os.system(cmd)
+        assert ret == 0, f'pdftk failed with code {ret}'
+    else:
+        # Compute the positions of each cards
+        margin = 0.5  # In centimeters
+        card_size = 7.0
+        page_width = 21.0
+        page_height = 29.7
+        nb_cards_per_row = int((page_width - 2 * margin) // card_size)
+        nb_cards_per_col = int((page_height - 2 * margin) // card_size)
+        positions = np.empty((0, 2))
+        for x in range(nb_cards_per_row):
+            for y in range(nb_cards_per_col):
+                pos = (x * card_size + margin, y * card_size + margin)
+                positions = np.append(positions, [pos], axis=0)
 
-    # group cards per page
-    per_page = nb_cards_per_row * nb_cards_per_col
-    pages = [the_deck.cards[i:i + per_page] for i in range(0, len(the_deck.cards), per_page)]
+        # group cards per page
+        per_page = nb_cards_per_row * nb_cards_per_col
+        pages = [the_deck.cards[i:i + per_page] for i in range(0, len(the_deck.cards), per_page)]
 
-    # positions = np.array([
-    #     (margin, margin),
-    #     (margin + card_size, margin),
-    #     (margin, page_height - margin - card_size),
-    #     (margin + card_size, page_height - margin - card_size),
-    # ])
+        # positions = np.array([
+        #     (margin, margin),
+        #     (margin + card_size, margin),
+        #     (margin, page_height - margin - card_size),
+        #     (margin + card_size, page_height - margin - card_size),
+        # ])
 
-    # convert from cm to 1/72 inch (unit of pdfs)
-    unit = 0.39370079 * 72
-    positions *= unit
-    card_size *= unit
-    # page_width *= unit
-    page_width = 595  # exact size of A4 (askip)
-    # page_height *= unit
-    page_height = 842
+        # convert from cm to 1/72 inch (unit of pdfs)
+        unit = 0.39370079 * 72
+        positions *= unit
+        card_size *= unit
+        # page_width *= unit
+        page_width = 595  # exact size of A4 (askip)
+        # page_height *= unit
+        page_height = 842
 
-    # create two new pages for each group
-    pdf = pikepdf.new()
-    for page in tqdm(pages):
-        recto = pdf.add_blank_page(page_size=(595, 842))  # A4
-        verso = pdf.add_blank_page(page_size=(595, 842))
+        # create two new pages for each group
+        pdf = pikepdf.new()
+        for page in tqdm(pages, desc='Collecting pdfs'):
+            recto = pdf.add_blank_page(page_size=(595, 842))  # A4
+            verso = pdf.add_blank_page(page_size=(595, 842))
 
-        for i, card in enumerate(page):
-            front = pikepdf.open(cache_dir / card.name(True, pdf=True))
-            recto.add_overlay(
-                front.pages[0],
-                pikepdf.Rectangle(*positions[i], *positions[i] + card_size))
+            for i, card in enumerate(page):
+                front = pikepdf.open(cache_dir / card.name(True, pdf=True))
+                recto.add_overlay(
+                    front.pages[0],
+                    pikepdf.Rectangle(*positions[i], *positions[i] + card_size))
 
-            back = pikepdf.open(cache_dir / card.name(False, pdf=True))
-            # idx = i ^ 1  # horizontal flip (when using the layout with 1 card in each angle)
-            p = [page_width - margin - card_size, margin]
-            verso.add_overlay(
-                back.pages[0],
-                pikepdf.Rectangle(page_width - positions[i][0] - card_size,
-                                  positions[i][1],
-                                  page_width - positions[i][0],
-                                  positions[i][1] + card_size))
-
-
-    pdf.save(output)
+                back = pikepdf.open(cache_dir / card.name(False, pdf=True))
+                # idx = i ^ 1  # horizontal flip (when using the layout with 1 card in each angle)
+                p = [page_width - margin - card_size, margin]
+                verso.add_overlay(
+                    back.pages[0],
+                    pikepdf.Rectangle(page_width - positions[i][0] - card_size,
+                                    positions[i][1],
+                                    page_width - positions[i][0],
+                                    positions[i][1] + card_size))
+        pdf.save(output)
 
     if show:
         os.system('firefox ' + str(output))

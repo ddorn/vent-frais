@@ -13,6 +13,8 @@ from dataclasses import dataclass
 import drawSvg as draw
 
 from typing import TYPE_CHECKING
+
+from tqdm import tqdm
 if TYPE_CHECKING:
     import pygame
 
@@ -73,7 +75,7 @@ def gen_points(density: Callable[[float, float], float] = lambda x, y: 1,
                                                                       1]
         y = random_weighted(y_weights)
         point = np.array([l + w * x / grid_size, t + h * y / grid_size])
-        print(point)
+        # print(point)
         yield point
 
 
@@ -92,7 +94,7 @@ def get_relaxed_points(density, square_side):
 
     pts_gen = gen_points(density=density, rect=(-square_side, -square_side, 2*square_side, 2*square_side))
 
-    for i in range(N):
+    for i in tqdm(range(N), desc="Generating points"):
         x = rd.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN)
         y = rd.uniform(-SAMPLING_MARGIN-square_side, square_side + SAMPLING_MARGIN)
         p = np.array([x, y])
@@ -104,7 +106,7 @@ def get_relaxed_points(density, square_side):
 
     points = np.array(points)
 
-    for it in range(MAX_ITERATION):
+    for it in tqdm(range(MAX_ITERATION), desc="Relaxing points"):
 
         vor = Voronoi(points, qhull_options="Qbb Qz Qc")
 
