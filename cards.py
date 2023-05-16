@@ -428,7 +428,7 @@ def convert_gfs_data(file: str, out: str):
 @click.argument('out', type=click.File('w'))
 @click.option('-s', '--scale', type=float, default=20.0)
 @click.option('-d', '--min-density', type=float, default=20.0)
-@click.option('-S', '--size', type=int, default=4)
+@click.option('-S', '--size', type=int, default=4, help='Generates shapes in [-size, size]^2')
 def generate_shapes(file, out, scale, min_density, size):
     """Convert a wind .npy file into a shapefile."""
 
@@ -459,23 +459,41 @@ def new_card(category, prompt, deck_path):
 @click.option('-h', '--has-header', is_flag=True)
 @click.option('-q', '--question-col', type=int, default=0)
 @click.option('-c', '--category-col', type=int, default=1)
+@click.option('-C', '--category-map', type=str, default=None, help='Name of the categories. Fmt: name-perso-easy;name-perso-hard;name-word;name-monde')
 @click.option('-d',
                 '--deck-path',
                 type=click.Path(exists=True, path_type=Path),
                 default=DECK_PATH)
-def new_card_from_csv(csv_file, deck_path, has_header, question_col, category_col):
+def new_card_from_csv(csv_file, deck_path, has_header, question_col, category_col, category_map):
     """Add all the cards from a csv file to the deck."""
 
     deck = Deck.load(deck_path)
     reader = csv.reader(csv_file)
+
+    if category_map is not None:
+        category_map = category_map.split(';')
+        assert len(category_map) == len(Category.__members__)
+
+        def get_cat(name):
+            """Get the category from the name according to the map."""
+            for cat, enum_member in zip(category_map, Category):
+                if name == cat:
+                    return enum_member
+            raise ValueError(f'Unknown category {name}. Valid categories are: {category_map}')
+    else:
+        def get_cat(name):
+            """Get the category from the name according to the map."""
+            cat = row[category_col].upper().replace(' ', '_').replace('-_', '')
+            try:
+                return Category[name]
+            except KeyError:
+                raise ValueError(f'Unknown category {cat}. Valid categories are: {list(Category.__members__.keys())}') from None
+
     if has_header:
         next(reader)
+
     for row in reader:
-        cat = row[category_col].upper().replace(' ', '_').replace('-_', '')
-        try:
-            cat = Category[cat]
-        except KeyError:
-            raise ValueError(f'Unknown category {cat}. Valid categories are: {list(Category.__members__.keys())}')
+        cat = get_cat(row[category_col])
         deck.new_card(cat, row[question_col])
     deck_path.write_text(deck.to_json())
 
@@ -590,9 +608,6 @@ def generate_pdf(deck, show, output, cache_dir: Path):
         # else:  # pdf exists
         #     click.secho(f'{progress} Using cached pdf {pdf_path}', fg='yellow')
 
-    # group cards four by four
-    pages = [the_deck.cards[i:i + 4] for i in range(0, len(the_deck.cards), 4)]
-
     # Compute the positions of each cards
     margin = 0.5  # In centimeters
     card_size = 7.0
@@ -606,7 +621,10 @@ def generate_pdf(deck, show, output, cache_dir: Path):
             pos = (x * card_size + margin, y * card_size + margin)
             positions = np.append(positions, [pos], axis=0)
 
-    print(positions)
+    # group cards per page
+    per_page = nb_cards_per_row * nb_cards_per_col
+    pages = [the_deck.cards[i:i + per_page] for i in range(0, len(the_deck.cards), per_page)]
+
     # positions = np.array([
     #     (margin, margin),
     #     (margin + card_size, margin),
@@ -618,11 +636,10 @@ def generate_pdf(deck, show, output, cache_dir: Path):
     unit = 0.39370079 * 72
     positions *= unit
     card_size *= unit
-    page_width *= unit
+    # page_width *= unit
     page_width = 595  # exact size of A4 (askip)
-    page_height *= unit
+    # page_height *= unit
     page_height = 842
-    print("Page size:", page_width, page_height)
 
     # create two new pages for each group
     pdf = pikepdf.new()
@@ -683,6 +700,7 @@ def plot_wind(wind_file: str):
 @plot.command('shapefile')
 @click.argument('shapefile', type=click.File())
 def plot_shapefile(shapefile):
+    pygame.init()
     shapes = json.load(shapefile)
 
     minx = float('inf')
