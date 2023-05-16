@@ -33,6 +33,8 @@ Commands:
   show     Show a deck.
 ```
 
+To see an example of usage, see [script.sh](./script.sh).
+
 ## Types of files
 
 - `grib2` files are the raw data files from the GFS model, which can then be converted to windfiles using `cards.py convert`.
