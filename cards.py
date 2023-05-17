@@ -419,10 +419,14 @@ class DeckParam(click.ParamType):
 
 
 deck_argument = click.argument('deck', type=DeckParam())
-output_file_option = partial(click.option,
-                             '-o',
-                             '--output',
-                             type=click.Path(writable=True, dir_okay=False))
+output_file_option = click.option('-o',
+                                  '--output',
+                                  type=click.File('w'),
+                                  default='-')
+output_binary_file_option = partial(click.option,
+                                    '-o',
+                                    '--output',
+                                    type=click.File('wb'))
 cache_dir_option = click.option('-C',
                                 '--cache-dir',
                                 type=click.Path(path_type=Path,
@@ -436,6 +440,7 @@ rounding_option = click.option('-r',
                                type=int,
                                default=CARD_ROUNDING,
                                help="Rounding of the cards' corner.")
+show_option = click.option('-s', '--show', is_flag=True, help='Open the file for viewing.')
 
 
 @click.group()
@@ -446,10 +451,8 @@ def cli():
 
 @cli.command(name='convert')
 @click.argument('file', type=click.Path(exists=True))
-@click.argument('out',
-                type=click.Path(writable=True, dir_okay=False),
-                default=WIND_PATH)
-def convert_gfs_data(file: str, out: str):
+@output_binary_file_option(default='wind.npy')
+def convert_gfs_data(file: str, output):
     """
     Convert GFS forcasts into numpy arrays with wind velocities.
 
@@ -469,14 +472,14 @@ def convert_gfs_data(file: str, out: str):
     u = ds.u10.data
     v = ds.v10.data
     velocities = np.stack((u, v), axis=-1)
-    np.save(out, velocities)
+    np.save(output, velocities)
 
     return velocities
 
 
 @cli.command(name='shapes')
-@click.argument('file', type=click.Path(exists=True))
-@click.argument('out', type=click.File('w'))
+@click.argument('wind-file', type=click.Path(exists=True))
+@output_file_option
 @click.option('-s', '--scale', type=float, default=20.0)
 @click.option('-d', '--min-density', type=float, default=20.0)
 @click.option('-S',
@@ -484,14 +487,14 @@ def convert_gfs_data(file: str, out: str):
               type=int,
               default=4,
               help='Generates shapes in [-size, size]^2')
-def generate_shapes(file, out, scale, min_density, size):
+def generate_shapes(wind_file, output, scale, min_density, size):
     """Convert a wind .npy file into a shapefile."""
 
-    wind = WindMap(np.load(file), scale)
+    wind = WindMap(np.load(wind_file), scale)
     shapes = generate_all_shapes(
         wind.angle_at, lambda x, y: min_density + wind.speed_at(x, y), size)
 
-    out.write(json.dumps(shapes))
+    json.dump(shapes, output)
 
 
 @cli.command('add')
@@ -564,7 +567,7 @@ def new_card_from_csv(deck: Deck, csv_file, has_header, question_col,
 #                 default=WIND_PATH)
 @click.argument('shapefile', type=click.File())
 # @click.option('-s', '--scale', type=click.FLOAT, default=1)
-@click.option('-o', '--output', type=click.File('w'), default='-')
+@output_file_option
 def new_deck(shapefile, output):
     """Create a new deck."""
 
@@ -595,10 +598,7 @@ def edit_deck(deck: Deck, shapefile=None):
 @deck_argument
 @click.argument('x', type=int)
 @click.argument('y', type=int)
-@click.option('-s',
-              '--show',
-              is_flag=True,
-              help='Directly show the image afterwards.')
+@show_option
 @click.option('-b',
               '--back',
               is_flag=True,
@@ -625,8 +625,8 @@ def gen_svg(deck: Deck, x, y, show, back, output: Optional[Path] = None):
 
 @cli.command('pdf')
 @deck_argument
-@click.option('-s', '--show', is_flag=True, help='Open the pdf afterwards.')
-@output_file_option(default='collage.pdf')
+@show_option
+@output_binary_file_option(default='collage.pdf')
 @cache_dir_option
 @overwrite_option
 @rounding_option
