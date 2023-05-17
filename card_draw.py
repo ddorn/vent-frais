@@ -310,7 +310,9 @@ def draw_card(
     card_position: tuple,
     text_metrics: list[tuple[str, tuple[int, int], pygame.Rect]],
     is_face: bool = False,
+    rounding: int = CARD_ROUNDING,
 ):
+
     rd.seed(str(card_position))
 
     # TODO seed the card
@@ -337,8 +339,8 @@ def draw_card(
                        S,
                        S,
                        fill=COLOR_PALETTES[card_type]['background'],
-                       rx=40,
-                       ry=40))
+                       rx=rounding,
+                       ry=rounding))
 
     bg = draw.ClipPath()
     bg.append(
@@ -347,8 +349,8 @@ def draw_card(
                        S,
                        S,
                        fill=COLOR_PALETTES[card_type]['background'],
-                       rx=40,
-                       ry=40))
+                       rx=rounding,
+                       ry=rounding))
 
     if is_face:
         # font size 1000 = 1 en coo

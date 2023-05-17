@@ -23,6 +23,7 @@ from tqdm import tqdm
 from card_draw import draw_card, generate_all_shapes
 from constants import *
 
+# For printing the cards in the terminal
 COLORS = [[-1, -1, -1], [255, 165, 0], [230, 240, 250], [65, 160, 100],
           [40, 67, 120]]
 
@@ -127,7 +128,10 @@ class Question:
         ext = 'pdf' if pdf else 'svg'
         return f'card_{self.position[0]}_{self.position[1]}_{side}.{ext}'
 
-    def gen_svg(self, shapes, is_face: bool = False):
+    def gen_svg(self,
+                shapes,
+                is_face: bool = False,
+                rounding: int = CARD_ROUNDING):
 
         def heatmap(f):
             v = [[f(x / 100, y / 100) for x in range(100)] for y in range(100)]
@@ -140,7 +144,7 @@ class Question:
 
         metrics = get_text_metrics(self.statement)
         return draw_card(self.category, shapes, self.position, metrics,
-                         is_face)
+                         is_face, rounding)
 
     def to_dict(self):
         return {
@@ -597,10 +601,15 @@ def gen_svg(deck, x, y, show, back, output: Optional[Path] = None):
 @click.option('--overwrite/--no-overwrite',
               default=False,
               help='Overwrite existing pdfs/svg in cache.')
+@click.option('-r',
+              '--rounding',
+              type=int,
+              default=CARD_ROUNDING,
+              help="Rounding of the cards' corner.")
 @click.option('--a4/--no-a4', default=True, help='Generate A4 pages.')
 @click.option('-j', '--jobs', "n_jobs", type=int, default=-1)
 def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
-                 a4: bool, n_jobs: int):
+                 a4: bool, n_jobs: int, rounding: int):
     """Generate a PDF of the deck."""
 
     the_deck = Deck.load(deck)
@@ -608,7 +617,7 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
     pdf_paths = {(is_face, card): cache_dir / card.name(is_face, pdf=True)
                  for card in the_deck.cards for is_face in [True, False]}
 
-    def generate_one(card, is_face):
+    def generate_one(is_face: bool, card: Question):
         pdf_path = pdf_paths[(is_face, card)]
         svg_path = pdf_path.with_suffix('.svg')
 
@@ -619,7 +628,7 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
         if svg_path.exists() and not overwrite:
             svg = svg_path.read_text()
         else:
-            svg = card.gen_svg(the_deck.shapes, is_face)
+            svg = card.gen_svg(the_deck.shapes, is_face, rounding)
             svg_path.write_text(svg)
 
         # use inkscape to convert svg to pdf
@@ -641,9 +650,8 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
             f'{len(pdf_paths) - len(need_to_generate)} pdfs are in cache.',
             fg='green')
         joblib.Parallel(n_jobs=n_jobs)(
-            joblib.delayed(generate_one)(card, is_face)
-            for card, is_face in tqdm(need_to_generate,
-                                      desc='Generating svg+pdfs'))
+            joblib.delayed(generate_one)(*key)
+            for key in tqdm(need_to_generate, desc='Generating svg+pdfs'))
 
     # Merge all pdfs into one
     if not a4:
