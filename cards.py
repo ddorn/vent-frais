@@ -134,18 +134,26 @@ class Question:
                 is_face: bool = False,
                 rounding: int = CARD_ROUNDING):
 
-        def heatmap(f):
-            v = [[f(x / 100, y / 100) for x in range(100)] for y in range(100)]
-            plt.imshow(v)
-
-        # heatmap(angle)
-        # plt.show()
-        # heatmap(speed)
-        # plt.show()
-
         metrics = get_text_metrics(self.statement)
         return draw_card(self.category, shapes, self.position, metrics,
                          is_face, rounding)
+
+    def gen_pdf(self,
+                shapes,
+                is_face: bool,
+                pdf_path: Path,
+                rounding: int = CARD_ROUNDING):
+        """Generate a pdf file for the card. Overwrites the file if it already exists."""
+        svg_path = pdf_path.with_suffix('.svg')
+
+        svg = self.gen_svg(shapes, is_face, rounding)
+        svg_path.write_text(svg)
+
+        # use inkscape to convert svg to pdf
+        ret_code = os.system(
+            f'inkscape "{svg_path}" --export-filename "{pdf_path}" 2> /dev/null'
+        )
+        assert ret_code == 0
 
     def to_dict(self):
         return {
@@ -196,6 +204,7 @@ class Deck:
         return s
 
     def new_card(self, category: Category, prompt: str) -> None:
+        """Find a fitting position for a new card and add it to the deck."""
         used_positions = {q.position for q in self.cards}
         radius = self.radius
         board = get_board(radius + 2)
@@ -440,7 +449,23 @@ rounding_option = click.option('-r',
                                type=int,
                                default=CARD_ROUNDING,
                                help="Rounding of the cards' corner.")
-show_option = click.option('-s', '--show', is_flag=True, help='Open the file for viewing.')
+show_option = click.option('-s',
+                           '--show',
+                           is_flag=True,
+                           help='Open the file for viewing.')
+
+# For CSVs
+has_header_option = click.option('-h', '--has-header', is_flag=True)
+question_col_option = click.option('-q', '--question-col', type=int, default=0)
+category_col_option = click.option('-c', '--category-col', type=int, default=1)
+category_map_option = click.option(
+    '-C',
+    '--category-map',
+    type=str,
+    default=None,
+    help=
+    'Name of the categories. Fmt: name-perso-easy;name-perso-hard;name-word;name-vision'
+)
 
 
 @click.group()
@@ -508,8 +533,8 @@ def new_card(deck: Deck, category, prompt):
     deck.save()
 
 
-@cli.command('add-csv')
-@deck_argument
+# Passes a dictionnary of Question -> Category to subcommands
+@cli.group('csv')
 @click.argument('csv-file', type=click.File())
 @click.option('-h', '--has-header', is_flag=True)
 @click.option('-q', '--question-col', type=int, default=0)
@@ -522,10 +547,10 @@ def new_card(deck: Deck, category, prompt):
     help=
     'Name of the categories. Fmt: name-perso-easy;name-perso-hard;name-word;name-vision'
 )
-def new_card_from_csv(deck: Deck, csv_file, has_header, question_col,
-                      category_col, category_map):
-    """Add all the cards from a csv file to the deck."""
-
+@click.pass_context
+def csv_group(ctx, csv_file, has_header, question_col, category_col,
+              category_map):
+    """Commands to import cards from csv files."""
     reader = csv.reader(csv_file)
 
     if category_map is not None:
@@ -555,9 +580,75 @@ def new_card_from_csv(deck: Deck, csv_file, has_header, question_col,
     if has_header:
         next(reader)
 
-    for row in reader:
-        cat = get_cat(row[category_col])
-        deck.new_card(cat, row[question_col])
+    questions = {
+        row[question_col]: get_cat(row[category_col])
+        for row in reader
+    }
+    ctx.obj = questions
+
+
+@csv_group.command('add-to-deck')
+@deck_argument
+@click.pass_context
+def new_card_from_csv(ctx, deck: Deck):
+    """Add all the cards from a csv file to the deck.
+
+    Does not check for duplicates and keep all the existing cards."""
+
+    for question, category in ctx.obj.items():
+        deck.new_card(category, question)
+    deck.save()
+
+
+@csv_group.command('sync-to-deck')
+@deck_argument
+@click.pass_context
+@click.option('-f',
+              '--force',
+              is_flag=True,
+              help='Do not ask for confirmation')
+@show_option
+def sync_deck(ctx, deck: Deck, force: bool, show: bool):
+    """Sync the questions in the deck with those in the csv file.
+
+    Remove all the cards in the deck that are not in the csv file.
+    Then add all the cards from the csv file that are not in the deck.
+    """
+
+    questions: dict[str, Category] = ctx.obj
+    # Check for both the category and the prompt
+    card_kept = [
+        card for card in deck.cards
+        if questions.get(card.statement, None) == card.category
+    ]
+    cards_to_add = [(name, category) for name, category in questions.items()
+                    if all(card.statement != name or card.category != category
+                           for card in deck.cards)]
+    cards_to_remove = [
+        card for card in deck.cards
+        if questions.get(card.statement, None) != card.category
+    ]
+
+    # Get confirmation if needed
+    if not force:
+        if cards_to_remove:
+            print('The following cards will be removed from the deck:')
+            for card in cards_to_remove:
+                print(f'  - {card.statement} ({card.category.name})')
+        if cards_to_add:
+            print('The following cards will be added to the deck:')
+            for name, category in cards_to_add:
+                print(f'  - {name} ({category.name})')
+        if not click.confirm('Do you want to proceed?'):
+            return
+
+    deck.cards = card_kept
+    for name, category in cards_to_add:
+        deck.new_card(category, name)
+
+    if show:
+        deck.show()
+
     deck.save()
 
 
@@ -649,27 +740,6 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
     pdf_paths = {(is_face, card): cache_dir / card.name(is_face, pdf=True)
                  for card in deck.cards for is_face in [True, False]}
 
-    def generate_one(is_face: bool, card: Question):
-        pdf_path = pdf_paths[(is_face, card)]
-        svg_path = pdf_path.with_suffix('.svg')
-
-        if pdf_path.exists() and not overwrite:
-            return
-
-        # Ensure svg exists
-        if svg_path.exists() and not overwrite:
-            svg = svg_path.read_text()
-        else:
-            svg = card.gen_svg(deck.shapes, is_face, rounding)
-            svg_path.write_text(svg)
-
-        # use inkscape to convert svg to pdf
-        # click.secho(f'{progress} Generating {pdf_path}: {card.statement}')
-        ret_code = os.system(
-            f'inkscape "{svg_path}" --export-filename "{pdf_path}" 2> /dev/null'
-        )
-        assert ret_code == 0
-
     # Make sure all svg and pdf are in cache
     need_to_generate = [
         key for key, path in pdf_paths.items()
@@ -682,8 +752,10 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
             f'{len(pdf_paths) - len(need_to_generate)} pdfs are in cache.',
             fg='green')
         joblib.Parallel(n_jobs=n_jobs)(
-            joblib.delayed(generate_one)(*key)
-            for key in tqdm(need_to_generate, desc='Generating svg+pdfs'))
+            joblib.delayed(card.gen_pdf)(deck.shapes, is_face, pdf_paths[(
+                is_face, card)], rounding)
+            for is_face, card in tqdm(need_to_generate,
+                                      desc='Generating svg+pdfs'))
 
     # Merge all pdfs into one
     if pattern == 'single':
@@ -691,6 +763,7 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
         click.secho("$ " + cmd, fg='yellow')
         ret = os.system(cmd)
         assert ret == 0, f'pdftk failed with code {ret}'
+
     elif pattern == 'a4':
         # Compute the positions of each cards
         margin = 0.5  # In centimeters

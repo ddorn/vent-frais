@@ -24,13 +24,13 @@ function generate() {
                 ./cards.py shapes data/wind.npy "$shape_file" --scale "$scale" --min-density "$density" --size "$square_size"
         fi
         ./cards.py new -o "$deck_file" "$shape_file"
-        ./cards.py add-csv --has-header \
-                -d "$deck_file" \
-                "$questions" \
+        ./cards.py csv --has-header \
                 --question-col 2 \
                 --category-col 8 \
-                --category-map "Uplifting;Vulnerable;Debate;Future"
-        ./cards.py pdf -o "$pdf_file" "$deck_file" --cache-dir "$cache_dir" --rounding 0
+                --category-map "Uplifting;Vulnerable;Debate;Future" \
+                "$questions" \
+                add-to-deck "$deck_file"
+        ./cards.py pdf -o "$pdf_file" "$deck_file" --cache-dir "$cache_dir" --rounding 0 --format "collage-front"
 
         if [ "$show" = "show" ]; then
                 echo "Showing $pdf_file"
