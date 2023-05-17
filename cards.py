@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import csv
+from functools import partial
 import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, Literal, Optional
 
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 
@@ -167,6 +168,7 @@ class Question:
 class Deck:
     cards: list[Question]
     shapes: list[dict[str, float]]
+    file: Optional[Path] = None
 
     @classmethod
     def load(cls, path: Path = DECK_PATH) -> Deck:
@@ -174,7 +176,17 @@ class Deck:
         return cls(
             [Question.from_dict(q) for q in d['cards']],
             d['shapes'],
+            path,
         )
+
+    def save(self, path: Optional[Path] = None) -> None:
+        if path is None:
+            path = self.file
+        if path is None:
+            raise ValueError('No path given')
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(self.to_json())
 
     def to_json(self) -> str:
         s = json.dumps({
@@ -389,6 +401,42 @@ def get_text_metrics(
 #  Command line interface  #
 # ------------------------ #
 
+# Common arguments and options
+
+
+class DeckParam(click.ParamType):
+    name = 'deck'
+
+    def convert(self, value, param, ctx):
+        if value is None:
+            return None
+        if isinstance(value, Deck):
+            return value
+        if isinstance(value, str):
+            path = Path(value)
+            return Deck.load(path)
+        self.fail(f'Invalid deck: {value!r}', param, ctx)
+
+
+deck_argument = click.argument('deck', type=DeckParam())
+output_file_option = partial(click.option,
+                             '-o',
+                             '--output',
+                             type=click.Path(writable=True, dir_okay=False))
+cache_dir_option = click.option('-C',
+                                '--cache-dir',
+                                type=click.Path(path_type=Path,
+                                                file_okay=False),
+                                default='out')
+overwrite_option = click.option('--overwrite/--no-overwrite',
+                                default=False,
+                                help='Overwrite existing pdfs/svg in cache.')
+rounding_option = click.option('-r',
+                               '--rounding',
+                               type=int,
+                               default=CARD_ROUNDING,
+                               help="Rounding of the cards' corner.")
+
 
 @click.group()
 def cli():
@@ -447,22 +495,18 @@ def generate_shapes(file, out, scale, min_density, size):
 
 
 @cli.command('add')
+@deck_argument
 @click.argument('category', type=click.Choice(list(Category.__members__)))
 @click.argument('prompt', type=click.STRING)
-@click.option('-d',
-              '--deck-path',
-              type=click.Path(exists=True, path_type=Path),
-              default=DECK_PATH)
-def new_card(category, prompt, deck_path):
+def new_card(deck: Deck, category, prompt):
     """Create a new card and add it to the deck."""
 
-    deck = Deck.load(deck_path)
     deck.new_card(Category[category], prompt)
-    deck_path.parent.mkdir(parents=True, exist_ok=True)
-    deck_path.write_text(deck.to_json())
+    deck.save()
 
 
 @cli.command('add-csv')
+@deck_argument
 @click.argument('csv-file', type=click.File())
 @click.option('-h', '--has-header', is_flag=True)
 @click.option('-q', '--question-col', type=int, default=0)
@@ -475,15 +519,10 @@ def new_card(category, prompt, deck_path):
     help=
     'Name of the categories. Fmt: name-perso-easy;name-perso-hard;name-word;name-vision'
 )
-@click.option('-d',
-              '--deck-path',
-              type=click.Path(exists=True, path_type=Path),
-              default=DECK_PATH)
-def new_card_from_csv(csv_file, deck_path, has_header, question_col,
+def new_card_from_csv(deck: Deck, csv_file, has_header, question_col,
                       category_col, category_map):
     """Add all the cards from a csv file to the deck."""
 
-    deck = Deck.load(deck_path)
     reader = csv.reader(csv_file)
 
     if category_map is not None:
@@ -516,7 +555,7 @@ def new_card_from_csv(csv_file, deck_path, has_header, question_col,
     for row in reader:
         cat = get_cat(row[category_col])
         deck.new_card(cat, row[question_col])
-    deck_path.write_text(deck.to_json())
+    deck.save()
 
 
 @cli.command('new')
@@ -536,26 +575,24 @@ def new_deck(shapefile, output):
 
 
 @cli.command('show')
-@click.argument('deck', type=click.Path(exists=True, path_type=Path))
-def show_deck(deck: Path):
-    """Show a deck."""
-    the_deck = Deck.load(deck)
-    the_deck.show()
+@deck_argument
+def show_deck(deck: Deck):
+    """Show a deck nicely."""
+    deck.show()
 
 
 @cli.command('edit')
-@click.argument('deck', type=click.Path(exists=True, path_type=Path))
+@deck_argument
 @click.option('-s', '--shapefile', type=click.File())
-def edit_deck(deck: Path, shapefile=None):
+def edit_deck(deck: Deck, shapefile=None):
     """Edit a deck."""
-    the_deck = Deck.load(deck)
     if shapefile is not None:
-        the_deck.shapes = json.load(shapefile)
-    deck.write_text(the_deck.to_json())
+        deck.shapes = json.load(shapefile)
+    deck.save()
 
 
 @cli.command('gen')
-@click.argument('deck', type=click.Path(exists=True, path_type=Path))
+@deck_argument
 @click.argument('x', type=int)
 @click.argument('y', type=int)
 @click.option('-s',
@@ -567,9 +604,8 @@ def edit_deck(deck: Path, shapefile=None):
               is_flag=True,
               help='Generate the back of the card.')
 @click.option('-o', '--output', type=click.Path(path_type=Path))
-def gen_svg(deck, x, y, show, back, output: Optional[Path] = None):
+def gen_svg(deck: Deck, x, y, show, back, output: Optional[Path] = None):
     """Generate a sigle svg of a card at position X, Y in DECK."""
-    deck = Deck.load(deck)
     card = deck.at(x, y)
     svg = card.gen_svg(deck.shapes, not back)
 
@@ -588,34 +624,30 @@ def gen_svg(deck, x, y, show, back, output: Optional[Path] = None):
 
 
 @cli.command('pdf')
-@click.argument('deck', type=click.Path(exists=True, path_type=Path))
+@deck_argument
 @click.option('-s', '--show', is_flag=True, help='Open the pdf afterwards.')
-@click.option('-o',
-              '--output',
-              type=click.Path(allow_dash=False, dir_okay=False, writable=True),
-              default='output.pdf')
-@click.option('-C',
-              '--cache-dir',
-              type=click.Path(path_type=Path, file_okay=False),
-              default='out')
-@click.option('--overwrite/--no-overwrite',
-              default=False,
-              help='Overwrite existing pdfs/svg in cache.')
-@click.option('-r',
-              '--rounding',
-              type=int,
-              default=CARD_ROUNDING,
-              help="Rounding of the cards' corner.")
-@click.option('--a4/--no-a4', default=True, help='Generate A4 pages.')
+@output_file_option(default='collage.pdf')
+@cache_dir_option
+@overwrite_option
+@rounding_option
+@click.option(
+    '-p',
+    '--pattern',
+    type=click.Choice(['a4', 'single', 'collage-front', 'collage-back'],
+                      case_sensitive=False),
+    default='single',
+    help=
+    'The pattern to use to generate the pdf. A4 is 8 cards/page. Single is one page per card. Collage is a single page with all the cards in a grid.'
+)
 @click.option('-j', '--jobs', "n_jobs", type=int, default=-1)
-def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
-                 a4: bool, n_jobs: int, rounding: int):
+def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
+                 pattern: Literal['a4', 'single', 'collage-front',
+                                  'collage-back'], n_jobs: int, rounding: int):
     """Generate a PDF of the deck."""
 
-    the_deck = Deck.load(deck)
     cache_dir.mkdir(parents=True, exist_ok=True)
     pdf_paths = {(is_face, card): cache_dir / card.name(is_face, pdf=True)
-                 for card in the_deck.cards for is_face in [True, False]}
+                 for card in deck.cards for is_face in [True, False]}
 
     def generate_one(is_face: bool, card: Question):
         pdf_path = pdf_paths[(is_face, card)]
@@ -628,7 +660,7 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
         if svg_path.exists() and not overwrite:
             svg = svg_path.read_text()
         else:
-            svg = card.gen_svg(the_deck.shapes, is_face, rounding)
+            svg = card.gen_svg(deck.shapes, is_face, rounding)
             svg_path.write_text(svg)
 
         # use inkscape to convert svg to pdf
@@ -654,12 +686,12 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
             for key in tqdm(need_to_generate, desc='Generating svg+pdfs'))
 
     # Merge all pdfs into one
-    if not a4:
+    if pattern == 'single':
         cmd = f'pdftk {" ".join(map(str, pdf_paths.values()))} cat output {output} verbose'
         click.secho("$ " + cmd, fg='yellow')
         ret = os.system(cmd)
         assert ret == 0, f'pdftk failed with code {ret}'
-    else:
+    elif pattern == 'a4':
         # Compute the positions of each cards
         margin = 0.5  # In centimeters
         card_size = 7.0
@@ -676,8 +708,8 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
         # group cards per page
         per_page = nb_cards_per_row * nb_cards_per_col
         pages = [
-            the_deck.cards[i:i + per_page]
-            for i in range(0, len(the_deck.cards), per_page)
+            deck.cards[i:i + per_page]
+            for i in range(0, len(deck.cards), per_page)
         ]
 
         # positions = np.array([
@@ -688,9 +720,8 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
         # ])
 
         # convert from cm to 1/72 inch (unit of pdfs)
-        unit = 0.39370079 * 72
-        positions *= unit
-        card_size *= unit
+        positions *= CM_TO_PDF_UNIT
+        card_size *= CM_TO_PDF_UNIT
         # page_width *= unit
         page_width = 595  # exact size of A4 (askip)
         # page_height *= unit
@@ -718,6 +749,43 @@ def generate_pdf(deck, show, output, cache_dir: Path, overwrite: bool,
                                       positions[i][1],
                                       page_width - positions[i][0],
                                       positions[i][1] + card_size))
+        pdf.save(output)
+
+    elif pattern in ('collage-front', 'collage-back'):
+        is_front = pattern == 'collage-front'
+
+        # Output is a single page of size 2 * radius + 1
+        scale = 10 * CM_TO_PDF_UNIT
+        radius = deck.radius
+        page_size = (2 * radius + 1) * scale
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(page_size, page_size))
+
+        # To add a background we generate a svg and convert it to pdf (not sure how to do it directly with pikepdf)
+        bg_color = COLOR_PALETTES[Category.PERSO_EASY]['background']
+        svg = f'<svg width="{page_size}" height="{page_size}"><rect width="{page_size}" height="{page_size}" style="fill:{bg_color}"/></svg>'
+        svg_path = cache_dir / 'background.svg'
+        svg_path.write_text(svg)
+        ret_code = os.system(
+            f'inkscape "{svg_path}" --export-filename "{cache_dir / "background.pdf"}" 2> /dev/null'
+        )
+        assert ret_code == 0
+        background = pikepdf.open(cache_dir / 'background.pdf')
+        page.add_overlay(background.pages[0],
+                         pikepdf.Rectangle(0, 0, page_size, page_size))
+
+        # Add all cards
+        for card in tqdm(deck.cards, desc='Collecting pdfs'):
+            front = pikepdf.open(cache_dir / card.name(is_front, pdf=True))
+            if is_front:
+                # The edges of the back match, but we need to flip everything
+                # for the front to work match, symetry axis is the center of the collage
+                x = (radius - card.position[0]) * scale
+            else:
+                x = (card.position[0] + radius) * scale
+            y = (card.position[1] + radius) * scale
+            page.add_overlay(front.pages[0],
+                             pikepdf.Rectangle(x, y, x + scale, y + scale))
         pdf.save(output)
 
     if show:

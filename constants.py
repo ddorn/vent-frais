@@ -6,6 +6,8 @@ QUESTION_PATH = DATA / 'questions.csv'
 DECK_PATH = DATA / 'deck.json'
 WIND_PATH = DATA / 'wind.npy'
 
+CM_TO_PDF_UNIT = 0.39370079 * 72
+
 FONT_FILE = 'font/ArbutusSlab-Regular.ttf'
 FONT_SIZE = 30
 TOP_MARGIN = 100
