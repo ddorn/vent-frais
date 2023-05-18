@@ -55,10 +55,8 @@ generate 10 5 data/questions-23-05-16.csv 12 show
 # done;
 
 
-# Find all files int out/ generated before 4 am, and print their names
-# find out/ -type f -mmin +240 -exec basename {} \; > out/old-files.txt
-
 # Delete all files in pdfs/ with same name as files in out/old-files.txt
+
 # while read -r line; do
 #         rm pdfs/"$line"
 # done < out/old-files.txt
@@ -66,4 +64,13 @@ generate 10 5 data/questions-23-05-16.csv 12 show
 
 # Show a question in random order from the svg in pdfs/vent-frais-test-s10-d5/
 # open them all in the same svg reader (imv)
+
 # find pdfs/vent-frais-rounding0-s10-d5/ -type f -name "*front.svg" | shuf | xargs imv -f -s full
+
+
+# Preprocess the questions csv file:
+# - remove the first line
+# - remove the last column
+# Note: Fields can be multiline and contain commas => use csvkit
+
+# csvcut --skip-lines 1 --not-columns "12-14" questions.csv > questions-$(date +%y-%m-%d).csv
