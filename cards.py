@@ -569,7 +569,7 @@ def csv_group(ctx, csv_file, has_header, question_col, category_col,
 
         def get_cat(name):
             """Get the category from the name according to the map."""
-            cat = row[category_col].upper().replace(' ', '_').replace('-_', '')
+            cat = name.upper().replace(' ', '_').replace('-_', '')
             try:
                 return Category[name]
             except KeyError:
@@ -696,7 +696,7 @@ def edit_deck(deck: Deck, shapefile=None):
               help='Generate the back of the card.')
 @click.option('-o', '--output', type=click.Path(path_type=Path))
 def gen_svg(deck: Deck, x, y, show, back, output: Optional[Path] = None):
-    """Generate a sigle svg of a card at position X, Y in DECK."""
+    """Generate a single svg of a card at position X, Y in DECK."""
     card = deck.at(x, y)
     svg = card.gen_svg(deck.shapes, not back)
 
@@ -759,7 +759,7 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
 
     # Merge all pdfs into one
     if pattern == 'single':
-        cmd = f'pdftk {" ".join(map(str, pdf_paths.values()))} cat output {output} verbose'
+        cmd = f'pdftk {" ".join(map(str, pdf_paths.values()))} cat output {output.name} verbose'
         click.secho("$ " + cmd, fg='yellow')
         ret = os.system(cmd)
         assert ret == 0, f'pdftk failed with code {ret}'
