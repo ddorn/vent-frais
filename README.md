@@ -1,5 +1,7 @@
 # Vent Frais
 
+![A sample card back](./sample.png)
+
 ## Installation
 All dependencies can be installed via poetry:
 ```bash
