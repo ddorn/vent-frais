@@ -1,5 +1,8 @@
 # Vent Frais
 
+You can download a copy of the cards on [the release page](https://github.com/ddorn/vent-frais/releases).
+If you want to print it, I recommend using thick paper (≥300 g/m²) and a professional quality printer. Cards are best with a side of 10cm or 8cm.
+
 ![A sample card back](./sample.png)
 
 ## Installation
