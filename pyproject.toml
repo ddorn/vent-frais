@@ -5,7 +5,7 @@ description = ""
 authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
-python = "~3.10"
+python = "^3.10"
 xarray = {version = "^2022.6.0"}
 matplotlib = "^3.5.2"
 cfgrib = "^0.9.10"

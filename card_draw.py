@@ -303,12 +303,14 @@ def dist_to_rect(pos, rect: pygame.Rect):
     )
     return np.linalg.norm(pos - nearest)
 
+if TYPE_CHECKING:
+    from cards import TextMetrics
 
 def draw_card(
     card_type: Category,
     shapes: list,
     card_position: tuple,
-    text_metrics: list[tuple[str, tuple[int, int], pygame.Rect]],
+    text_metrics: list["TextMetrics"],
     is_face: bool = False,
     rounding: int = CARD_ROUNDING,
 ):
@@ -327,7 +329,7 @@ def draw_card(
         logo_xy=np.array([0.5, 0.5]),
         logo_radius=LOGO_RADIUS,
         is_face=is_face,
-        line_rects=[r for _, _, r in text_metrics],
+        line_rects=[metrics.rect for metrics in text_metrics],
         line_width=LINE_WIDTH,
     )
 
@@ -354,13 +356,14 @@ def draw_card(
 
     if is_face:
         # font size 1000 = 1 en coo
-        for line, (x, y), rect in text_metrics:
+        for metric in text_metrics:
+            x, y = metric.position
             d.append(
                 draw.Text(
-                    [line],
-                    30,
-                    x,
-                    500 - y,
+                    [metric.text],
+                    fontSize=metric.font_size,
+                    x=x,
+                    y=500 - y,
                     fill='white',
                     style=
                     "font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-family:'Arbutus Slab';-inkscape-font-specification:'Arbutus Slab'"

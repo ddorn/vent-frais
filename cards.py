@@ -350,6 +350,12 @@ class WindMap:
 
 _TEXT = "Quel événement de ton enfance à eu le plus d'impact sur ce que tu fais aujourd'hui ?"
 
+@dataclass
+class TextMetrics:
+    text: str
+    position: tuple[int, int]
+    rect: pygame.Rect
+    font_size: int
 
 def get_text_metrics(
         text: str = _TEXT,
@@ -358,30 +364,62 @@ def get_text_metrics(
         margin=MARGIN,
         line_spacing=LINE_SPACING,
         canvas_size=CANVAS_SIZE,
-        font_file=FONT_FILE) -> list[tuple[str, tuple[int, int], pygame.Rect]]:
+        font_file=FONT_FILE) -> list[TextMetrics]:
+    r"""Return each line of formated text with its position and rect.
+
+    Lines starting with <big> will be rendered with a bigger font size until the next \n newline.
+    <big> tags always start a new line.
+    Consecutive spaces are replaced by a single space.
+    """
 
     pygame.init()
-    font = pygame.font.Font(font_file, font_size)
+    font_sizes = font_size, int(font_size * 1.5)
+    fonts = [pygame.font.Font(font_file, f) for f in font_sizes]
 
-    def wrapped_text(txt: str, max_width):
-        words = txt.split(' ')
+    def wrapped_text(txt: str, max_width) -> list[tuple[str, bool]]:
+        new_line_marker = '<NEWLINE>'
+        # Make sure the <big> tags are on their own word
+        txt = txt.replace('<big>', ' <big> ')
+        txt = txt.strip().replace('\n', f' {new_line_marker} ')
+        words = txt.split()
         lines = []
+        big = False
         while words:
             line: list[str] = []
-            while font.size(" ".join(line))[0] < max_width:
+            while fonts[big].size(" ".join(line))[0] < max_width:
                 if not words:
                     break
+                elif words[0] == new_line_marker:
+                    words.pop(0)
+                    next_big = False
+                    break
+                elif words[0] == '<big>':
+                    # If we set big directly, and start a new line,
+                    # then we forgot the size of the previous line
+                    next_big = True
+                    if line:
+                        # The <big> tag starts a new line
+                        break
+                    big = next_big
+                    words.pop(0)
+                    continue
+
+                # We tentatively add the word
                 line.append(words.pop(0))
             else:
+                # And put it back if it was too long
                 words.insert(0, line.pop())
-            lines.append(' '.join(line))
+
+            lines.append([' '.join(line), big])
+            big = next_big
+
         return lines
 
-    def center_text(midtop: tuple[int, int], *lines: str):
+    def center_text(midtop: tuple[int, int], *lines: tuple[str, bool]):
         rects = []
         y = midtop[1]
-        for line in lines:
-            r = pygame.Rect(0, 0, *font.size(line))
+        for line, big in lines:
+            r = pygame.Rect(0, 0, *fonts[big].size(line))
             r.midtop = midtop[0], y
             rects.append(r)
             y += r.height + line_spacing
@@ -391,10 +429,14 @@ def get_text_metrics(
     lines = wrapped_text(text, canvas_size - margin * 2)
     rects = center_text((canvas_size // 2, top_margin), *lines)
 
-    descent = font.get_descent()
-    ascent = font.get_ascent()
-    return [(line, (rect.left, rect.top + ascent), rect)
-            for line, rect in zip(lines, rects)]
+    return [TextMetrics(
+        text=line,
+        position=(rect.left, rect.top + fonts[big].get_ascent()),
+        rect=rect,
+        font_size=font_sizes[big],
+    )
+            for (line, big), rect in zip(lines, rects, strict=True)
+            if rect.width and rect.height]  # Ignore empty lines
 
 
 # def load_questions() -> list[Question]:
@@ -536,7 +578,7 @@ def new_card(deck: Deck, category, prompt):
 # Passes a dictionnary of Question -> Category to subcommands
 @cli.group('csv')
 @click.argument('csv-file', type=click.File())
-@click.option('-h', '--has-header', is_flag=True)
+@click.option('-s', '--skip-first', type=int, default=0, help='Skip the first N lines of the file.')
 @click.option('-q', '--question-col', type=int, default=0)
 @click.option('-c', '--category-col', type=int, default=1)
 @click.option(
@@ -548,7 +590,7 @@ def new_card(deck: Deck, category, prompt):
     'Name of the categories. Fmt: name-perso-easy;name-perso-hard;name-word;name-vision'
 )
 @click.pass_context
-def csv_group(ctx, csv_file, has_header, question_col, category_col,
+def csv_group(ctx, csv_file, skip_first, question_col, category_col,
               category_map):
     """Commands to import cards from csv files."""
     reader = csv.reader(csv_file)
@@ -563,7 +605,7 @@ def csv_group(ctx, csv_file, has_header, question_col, category_col,
                 if name == cat:
                     return enum_member
             raise ValueError(
-                f'Unknown category {name}. Valid categories are: {category_map}'
+                f'Unknown category {name!r}. Valid categories are: {category_map}'
             )
     else:
 
@@ -577,7 +619,7 @@ def csv_group(ctx, csv_file, has_header, question_col, category_col,
                     f'Unknown category {cat}. Valid categories are: {list(Category.__members__.keys())}'
                 ) from None
 
-    if has_header:
+    for _ in range(skip_first):
         next(reader)
 
     questions = {
@@ -724,7 +766,7 @@ def gen_svg(deck: Deck, x, y, show, back, output: Optional[Path] = None):
 @click.option(
     '-p',
     '--pattern',
-    type=click.Choice(['a4', 'single', 'collage-front', 'collage-back'],
+    type=click.Choice(['a4', 'single', 'collage-front', 'collage-back', 'dont-merge'],
                       case_sensitive=False),
     default='single',
     help=
@@ -758,7 +800,9 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
                                       desc='Generating svg+pdfs'))
 
     # Merge all pdfs into one
-    if pattern == 'single':
+    if pattern == 'dont-merge':
+        return
+    elif pattern == 'single':
         cmd = f'pdftk {" ".join(map(str, pdf_paths.values()))} cat output {output.name} verbose'
         click.secho("$ " + cmd, fg='yellow')
         ret = os.system(cmd)
