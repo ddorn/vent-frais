@@ -61,4 +61,4 @@ To see an example of usage, see [script.sh](./script.sh).
 - `deck`s are json files which contain a list of cards and a shapefile.
 
 
-<!-- To tweak colors and categories, configuration is found in [`constants.py`](constants.py). -->
+![An overview of the cards, with cards seamlessly blending into each other and showing the wind patterns accros the globe](./collage.png)

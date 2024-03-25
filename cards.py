@@ -384,6 +384,7 @@ def get_text_metrics(
         words = txt.split()
         lines = []
         big = False
+        next_big = False
         while words:
             line: list[str] = []
             while fonts[big].size(" ".join(line))[0] < max_width:
@@ -650,11 +651,13 @@ def new_card_from_csv(ctx, deck: Deck):
               is_flag=True,
               help='Do not ask for confirmation')
 @show_option
-def sync_deck(ctx, deck: Deck, force: bool, show: bool):
+@cache_dir_option
+def sync_deck(ctx, deck: Deck, force: bool, show: bool, cache_dir: Path):
     """Sync the questions in the deck with those in the csv file.
 
     Remove all the cards in the deck that are not in the csv file.
     Then add all the cards from the csv file that are not in the deck.
+    Removes the generated pdfs/svg from the cache if they are not in the deck anymore.
     """
 
     questions: dict[str, Category] = ctx.obj
@@ -670,6 +673,10 @@ def sync_deck(ctx, deck: Deck, force: bool, show: bool):
         card for card in deck.cards
         if questions.get(card.statement, None) != card.category
     ]
+
+    if not cards_to_add and not cards_to_remove:
+        print("No changes needed.")
+        return
 
     # Get confirmation if needed
     if not force:
@@ -692,6 +699,19 @@ def sync_deck(ctx, deck: Deck, force: bool, show: bool):
         deck.show()
 
     deck.save()
+
+    paths_to_remove = [
+        cache_dir / card.name(is_face, is_pdf)
+        for card in cards_to_remove
+        for is_face in [True, False]
+        for is_pdf in [True, False]
+    ]
+    print('The following files should not be in the cache anymore:')
+    print('\n - '.join(map(str, paths_to_remove)))
+    if not force and click.confirm('Do you want to remove them?'):
+        for path in paths_to_remove:
+            (cache_dir / path).unlink(missing_ok=True)
+
 
 
 @cli.command('new')
@@ -783,6 +803,7 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
                  for card in deck.cards for is_face in [True, False]}
 
     # Make sure all svg and pdf are in cache
+    # TODO: We could also check the integrity of the files (i.e. they are the right questions)
     need_to_generate = [
         key for key, path in pdf_paths.items()
         if not path.exists() or overwrite
