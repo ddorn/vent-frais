@@ -792,10 +792,17 @@ def gen_svg(deck: Deck, x, y, show, back, output: Optional[Path] = None):
     help=
     'The pattern to use to generate the pdf. A4 is 8 cards/page. Single is one page per card. Collage is a single page with all the cards in a grid.'
 )
+@click.option(
+    '--card-size',
+    type=float,
+    default=8,
+    help='The size of the cards in centimeters.'
+)
 @click.option('-j', '--jobs', "n_jobs", type=int, default=-1)
 def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
-                 pattern: Literal['a4', 'single', 'collage-front',
-                                  'collage-back'], n_jobs: int, rounding: int):
+                 pattern: Literal['a4', 'single', 'collage-front', 'collage-back'],
+                card_size: float,
+                n_jobs: int, rounding: int):
     """Generate a PDF of the deck."""
 
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -824,15 +831,22 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
     if pattern == 'dont-merge':
         return
     elif pattern == 'single':
-        cmd = f'pdftk {" ".join(map(str, pdf_paths.values()))} cat output {output.name} verbose'
-        click.secho("$ " + cmd, fg='yellow')
-        ret = os.system(cmd)
-        assert ret == 0, f'pdftk failed with code {ret}'
+        # cmd = f'pdftk {" ".join(map(str, pdf_paths.values()))} cat output {output.name} verbose'
+        # click.secho("$ " + cmd, fg='yellow')
+        # ret = os.system(cmd)
+        # assert ret == 0, f'pdftk failed with code {ret}'
+        page_size = card_size * CM_TO_PDF_UNIT
+        pdf = pikepdf.new()
+        for path in tqdm(pdf_paths.values(), desc='Gluing pdfs together'):
+            card = pikepdf.open(path)
+            page = pdf.add_blank_page(page_size=(page_size, page_size))
+            page.add_overlay(card.pages[0], pikepdf.Rectangle(0, 0, page_size, page_size))
+        print(f'Saving to {output.name} (this can take some time if 200+ pages')
+        pdf.save(output)
 
     elif pattern == 'a4':
         # Compute the positions of each cards
         margin = 0.5  # In centimeters
-        card_size = 7.0
         page_width = 21.0
         page_height = 29.7
         nb_cards_per_row = int((page_width - 2 * margin) // card_size)
@@ -893,7 +907,7 @@ def generate_pdf(deck: Deck, show, output, cache_dir: Path, overwrite: bool,
         is_front = pattern == 'collage-front'
 
         # Output is a single page of size 2 * radius + 1
-        scale = 10 * CM_TO_PDF_UNIT
+        scale = card_size * CM_TO_PDF_UNIT
         radius = deck.radius
         page_size = (2 * radius + 1) * scale
         pdf = pikepdf.new()
